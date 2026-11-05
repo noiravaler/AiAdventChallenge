@@ -12,6 +12,7 @@ import (
 
 	"ai-chat-go/api"
 	"ai-chat-go/config"
+	"ai-chat-go/server"
 )
 
 func main() {
@@ -118,7 +119,7 @@ Environment:
 	}
 
 	if *useWeb && !*cliMode {
-		return runWeb(client, cfg, *webPort, !*noOpen)
+		return server.Run(client, cfg, *webPort, !*noOpen)
 	}
 
 	fmt.Printf("AI chat | model: %s | endpoint: %s\n", cfg.Model, cfg.BaseURL)

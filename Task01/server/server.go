@@ -1,5 +1,5 @@
-// Package web serves the browser chat interface.
-package web
+// Package server serves the browser chat interface.
+package server
 
 import (
 	"context"

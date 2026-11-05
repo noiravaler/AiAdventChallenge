@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"fmt"
@@ -9,12 +9,11 @@ import (
 	"time"
 
 	"ai-chat-go/api"
-	"ai-chat-go/app/web"
 	"ai-chat-go/config"
 )
 
-// runWeb starts the local web chat and opens it in the browser.
-func runWeb(client *api.Client, cfg config.Config, port int, open bool) error {
+// Run starts the local web chat and opens it in the browser.
+func Run(client *api.Client, cfg config.Config, port int, open bool) error {
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		// Port is taken: fall back to a random free port.
@@ -25,8 +24,8 @@ func runWeb(client *api.Client, cfg config.Config, port int, open bool) error {
 	}
 	url := fmt.Sprintf("http://%s", ln.Addr())
 
-	server := &http.Server{
-		Handler:           web.New(client, cfg).Handler(),
+	srv := &http.Server{
+		Handler:           New(client, cfg).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -37,7 +36,7 @@ func runWeb(client *api.Client, cfg config.Config, port int, open bool) error {
 			fmt.Println("Не удалось открыть браузер автоматически:", err)
 		}
 	}
-	return server.Serve(ln)
+	return srv.Serve(ln)
 }
 
 func openInBrowser(url string) error {

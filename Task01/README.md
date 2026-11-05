@@ -139,20 +139,20 @@ go test ./...
 ## Структура проекта
 
 ```
-ai-chat-go/
-├── app/
-│   ├── main.go                    # точка входа: флаги, CLI, one-shot, выбор режима
-│   ├── web.go                     # запуск веб-сервера и браузера
-│   └── web/
-│       ├── server.go              # HTTP API веб-чата
-│       ├── server_test.go         # тесты веб-чата
-│       └── static/
-│           └── index.html         # страница чата (стиль мессенджера)
-├── api/
-│   ├── client.go                  # HTTP-клиент и разбор SSE
-│   └── client_test.go             # тесты на httptest-сервере
-├── config/
-│   └── config.go                  # .env, переменные окружения, валидация
+Task01/
+├── app/                            # клиент: точка входа (package main)
+│   └── main.go                     # флаги, CLI, one-shot, выбор режима
+├── server/                         # сервер веб-чата (package server)
+│   ├── server.go                   # HTTP API веб-чата
+│   ├── web.go                      # запуск сервера и открытие браузера
+│   ├── server_test.go              # тесты веб-чата
+│   └── static/
+│       └── index.html              # страница чата (стиль мессенджера)
+├── api/                            # взаимодействие с ИИ по API
+│   ├── client.go                   # HTTP-клиент и разбор SSE
+│   └── client_test.go              # тесты на httptest-сервере
+├── config/                         # .env, переменные окружения, валидация
+│   └── config.go
 ├── .env.example
 ├── Makefile
 └── go.mod
