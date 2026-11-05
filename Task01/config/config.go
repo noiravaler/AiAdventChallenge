@@ -17,6 +17,15 @@ const (
 	DefaultTimeout = 5 * time.Minute
 )
 
+// DefaultModels is the chat model list used when AI_MODELS is not set.
+var DefaultModels = []string{
+	"glm-5.3-flash",
+	"deepseek-v4-flash",
+	"deepseek-v4.1-flash",
+	"qwen3.8-27b",
+	"gpt-4o",
+}
+
 // Config holds all settings needed to talk to an OpenAI-compatible API.
 type Config struct {
 	APIKey    string
@@ -25,6 +34,7 @@ type Config struct {
 	System    string
 	Timeout   time.Duration
 	MaxTokens int
+	Models    []string
 }
 
 // Load reads .env (if present) and then the environment variables.
@@ -58,6 +68,11 @@ func Load() (Config, error) {
 			return Config{}, errors.New("AI_MAX_TOKENS must be a non-negative integer")
 		}
 		cfg.MaxTokens = n
+	}
+
+	cfg.Models = parseModelList(envOr("AI_MODELS", strings.Join(DefaultModels, ",")))
+	if len(cfg.Models) == 0 {
+		cfg.Models = append([]string(nil), DefaultModels...)
 	}
 
 	return cfg, nil
@@ -95,6 +110,17 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseModelList splits a comma-separated model list after trimming spaces.
+func parseModelList(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // loadDotEnv reads simple KEY=VALUE lines. Existing environment variables win.
