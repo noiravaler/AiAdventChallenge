@@ -20,9 +20,14 @@ import (
 //go:embed static/index.html
 var indexHTML []byte
 
-// defaultNoReplyTimeout aborts a chat request whose model produces no output
-// within this duration, and logs the error.
-const defaultNoReplyTimeout = 7 * time.Second
+// defaultNoReplyTimeout aborts the request when the model produces no token
+// (visible content or reasoning trace) for this long. It can be overridden per
+// request by the "timeout" field (5..30 s) from the UI slider.
+const defaultNoReplyTimeout = 10 * time.Second
+
+// modelRefreshTimeout caps how long /api/models spends querying the upstream
+// /models endpoint before falling back to the last known model list.
+const modelRefreshTimeout = 5 * time.Second
 
 // Server keeps the conversation state for the browser chat.
 type Server struct {
@@ -36,6 +41,9 @@ type Server struct {
 	model          string        // currently selected model
 	models         []string      // models offered in the contact sidebar
 	noReplyTimeout time.Duration // abort when the model stays silent this long
+
+	reserve      *api.Client // independent fallback provider (not via GPUStack)
+	reserveModel string      // model served by the reserve provider
 
 	lastDetail string // compact JSON of the last error/limit detail (Детали panel)
 }
@@ -51,11 +59,86 @@ func New(client *api.Client, cfg config.Config) *Server {
 	if s.model == "" && len(s.models) > 0 {
 		s.model = s.models[0]
 	}
+	// Independent reserve provider: not related to the main endpoint at all.
+	if cfg.ReserveBaseURL != "" {
+		s.reserve = api.New(cfg.ReserveBaseURL, cfg.ReserveAPIKey, cfg.Timeout)
+		s.reserve.DebugLog = nil // панель «Детали» читает обмены из памяти клиента
+		s.reserveModel = cfg.ReserveModel
+	}
 	s.hist = make([]api.Message, 0, 16)
 	if cfg.System != "" {
 		s.hist = append(s.hist, api.SystemMessage(cfg.System))
 	}
 	return s
+}
+
+// isReserve reports whether the model belongs to the reserve provider.
+func (s *Server) isReserve(model string) bool {
+	return s.reserveModel != "" && model == s.reserveModel
+}
+
+// clientFor returns the API client responsible for the given model: the
+// reserve client for the reserve model, the main client otherwise.
+func (s *Server) clientFor(model string) *api.Client {
+	if s.isReserve(model) && s.reserve != nil {
+		return s.reserve
+	}
+	return s.client
+}
+
+// clientStream streams a chat completion through the client responsible for
+// the given model (main provider or the reserve one). onActivity fires for
+// every model token, including reasoning chunks not shown in the chat.
+func (s *Server) clientStream(ctx context.Context, model string, messages []api.Message, maxTokens int, onDelta func(string), onActivity func(), opts ...api.Option) (string, error) {
+	return s.clientFor(model).StreamChatWithActivity(ctx, model, messages, maxTokens, onDelta, onActivity, opts...)
+}
+
+// refreshModels queries the upstream /models endpoint, drops obviously non-chat
+// models and updates the sidebar list. On any error — or when nothing chat-like
+// is left — the currently known list is kept untouched.
+func (s *Server) refreshModels(ctx context.Context) {
+	ids, err := s.client.ListModels(ctx)
+	if err != nil {
+		return
+	}
+	chat := filterChatModels(ids)
+	if len(chat) == 0 {
+		return
+	}
+
+	s.mu.Lock()
+	s.models = chat
+	// Keep a valid current selection after the list is replaced.
+	found := false
+	for _, m := range s.models {
+		if m == s.model {
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.model = s.models[0]
+	}
+	s.mu.Unlock()
+}
+
+// filterChatModels removes model IDs that are clearly not chat completions:
+// embeddings, rerankers and speech/audio models, matched by name patterns.
+func filterChatModels(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		lower := strings.ToLower(id)
+		if strings.Contains(lower, "embedding") ||
+			strings.Contains(lower, "rerank") ||
+			strings.Contains(lower, "whisper") ||
+			strings.Contains(lower, "tts") ||
+			strings.Contains(lower, "audio") ||
+			strings.Contains(lower, "asr") {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
 }
 
 // Handler returns the HTTP routes of the web chat.
@@ -123,13 +206,25 @@ func (s *Server) currentModel() string {
 	return s.model
 }
 
-// handleModels lists the models available in the contact sidebar.
+// handleModels lists the models available in the contact sidebar, refreshing
+// them from the upstream /models endpoint so the sidebar always shows current
+// chat models. When the refresh fails the last known list is used (seeded from
+// AI_MODELS / DefaultModels).
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), modelRefreshTimeout)
+	s.refreshModels(ctx)
+	cancel()
+
 	s.mu.Lock()
 	models := append([]string(nil), s.models...)
 	current := s.model
 	s.mu.Unlock()
-	writeJSON(w, map[string]any{"models": models, "current": current})
+	out := map[string]any{"models": models, "current": current}
+	if s.reserveModel != "" {
+		out["reserve"] = s.reserveModel
+		out["reserve_ready"] = s.cfg.ReserveConfigured()
+	}
+	writeJSON(w, out)
 }
 
 // handleModel switches the active model and opens a fresh session.
@@ -154,6 +249,14 @@ func (s *Server) handleModel(w http.ResponseWriter, r *http.Request) {
 			valid = true
 			break
 		}
+	}
+	if !valid && s.isReserve(req.Model) {
+		if !s.cfg.ReserveConfigured() {
+			s.mu.Unlock()
+			http.Error(w, "Резервный провайдер не настроен: задайте AI_RESERVE_API_KEY (и, при необходимости, AI_RESERVE_BASE_URL/AI_RESERVE_MODEL) в .env", http.StatusServiceUnavailable)
+			return
+		}
+		valid = true
 	}
 	if !valid {
 		s.mu.Unlock()
@@ -192,7 +295,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 // handleDebug returns the JSON of the last API request and response for the
 // "Детали" side panel.
 func (s *Server) handleDebug(w http.ResponseWriter, r *http.Request) {
-	request, response := s.client.LastExchange()
+	request, response := s.clientFor(s.currentModel()).LastExchange()
 	s.mu.Lock()
 	detail := s.lastDetail
 	s.mu.Unlock()
@@ -241,6 +344,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		Message   string `json:"message"`
 		Format    string `json:"format"`
 		MaxTokens int    `json:"maxTokens"`
+		Timeout   int    `json:"timeout"` // допустимый таймаут ответа, секунды (5..30)
 		Schema    string `json:"schema"`
 		Stop      string `json:"stop"`
 	}
@@ -264,6 +368,19 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if maxTokens > 15000 {
 		maxTokens = 15000
+	}
+
+	// Допустимый таймаут ответа: клиент задаёт 5..100 секунд (по умолчанию 90).
+	timeout := s.noReplyTimeout
+	if req.Timeout > 0 {
+		secs := req.Timeout
+		if secs < 5 {
+			secs = 5
+		}
+		if secs > 30 {
+			secs = 30
+		}
+		timeout = time.Duration(secs) * time.Second
 	}
 
 	// JSON Schema formats require a non-empty, valid JSON Schema.
@@ -294,16 +411,19 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.Timeout)
 	defer cancel()
 
-	// Abort the request if the model produces no output within noReplyTimeout.
+	// Abort the request if the model produces no output within the allowed timeout.
+	// Any generation counts as alive: visible content or the reasoning trace.
 	first := make(chan struct{})
+	var firstOnce sync.Once
 	aborted := make(chan struct{})
+	activity := func() { firstOnce.Do(func() { close(first) }) }
 	go func() {
 		select {
 		case <-first:
 			// First delta arrived; the model is alive.
-		case <-time.After(s.noReplyTimeout):
+		case <-time.After(timeout):
 			close(aborted)
-			log.Printf("chat: no response from model %q within %s; aborted", model, s.noReplyTimeout)
+			log.Printf("chat: no response from model %q within %s; aborted", model, timeout)
 			cancel()
 		case <-ctx.Done():
 		}
@@ -317,12 +437,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// we can still answer with a real error code.
 	var answer strings.Builder
 	wrote := false
-	firstWritten := false
 	writeDelta := func(delta string) {
-		if !firstWritten {
-			firstWritten = true
-			close(first)
-		}
+		firstOnce.Do(func() { close(first) })
 		answer.WriteString(delta)
 		if !wrote {
 			w.WriteHeader(http.StatusOK)
@@ -334,7 +450,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err := s.client.StreamChat(ctx, model, messages, maxTokens, writeDelta, api.Option{ResponseFormat: format, Schema: req.Schema, Stop: req.Stop})
+	_, err := s.clientStream(ctx, model, messages, maxTokens, writeDelta, activity, api.Option{ResponseFormat: format, Schema: req.Schema, Stop: req.Stop})
 
 	isAborted := false
 	select {
@@ -356,8 +472,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 				"type":          "no_response",
 				"finish_reason": "timeout",
 				"max_tokens":    maxTokens,
-				"summary":       "Модель не ответила за " + s.noReplyTimeout.String(),
-				"detail":        fmt.Sprintf("Модель не вернула ни одного токена за %s — запрос был отменён.", s.noReplyTimeout),
+				"summary":       "Модель не ответила за " + timeout.String(),
+				"detail":        fmt.Sprintf("Модель не вернула ни одного токена за %s — запрос был отменён.", timeout),
 			})
 		} else {
 			s.setDetail(map[string]any{
@@ -369,7 +485,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 		if !wrote {
 			if isAborted {
-				http.Error(w, fmt.Sprintf("Модель не ответила за %s. Запрос отменён.", s.noReplyTimeout), http.StatusGatewayTimeout)
+				http.Error(w, fmt.Sprintf("Модель не ответила за %s. Запрос отменён.", timeout), http.StatusGatewayTimeout)
 				return
 			}
 			http.Error(w, err.Error(), http.StatusBadGateway)
@@ -396,7 +512,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	// Detect schema violations and token-limit truncation so the "Детали"
 	// panel can surface an error block and the chat can log a short message.
-	finish := s.client.LastFinishReason()
+	finish := s.clientFor(model).LastFinishReason()
 	var detail map[string]any
 	switch {
 	case finish == "length":

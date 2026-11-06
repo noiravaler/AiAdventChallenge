@@ -204,3 +204,38 @@ func TestDebugLog(t *testing.T) {
 		t.Fatalf("unexpected error event: %+v", respErr)
 	}
 }
+
+func TestListModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("unexpected Authorization header: %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"object":"list","data":[{"id":"default-chat"},{"id":"glm-5.3-flash"}]}`)
+	}))
+	defer srv.Close()
+
+	client := New(srv.URL, "test-key", 5*time.Second)
+	ids, err := client.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != "default-chat" || ids[1] != "glm-5.3-flash" {
+		t.Fatalf("ids = %v, want [default-chat glm-5.3-flash]", ids)
+	}
+}
+
+func TestListModelsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"message":"nope"}}`, http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	client := New(srv.URL, "bad-key", 5*time.Second)
+	if _, err := client.ListModels(context.Background()); err == nil {
+		t.Fatal("expected an error for a non-200 /models response")
+	}
+}

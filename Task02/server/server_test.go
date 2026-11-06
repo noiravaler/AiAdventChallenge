@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -312,6 +313,63 @@ func TestNoResponseAborted(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "не ответила") {
 		t.Fatalf("body = %q, want it to mention a no-response timeout", body)
+	}
+}
+
+// TestHandleModelsDiscoversAndFilters checks that /api/models pulls the list
+// from the upstream /models endpoint, drops non-chat models and keeps the
+// current selection valid.
+func TestHandleModelsDiscoversAndFilters(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"object":"list","data":[
+				{"id":"default-chat"},{"id":"default-coding"},
+				{"id":"whisper-large-v3-turbo"},{"id":"qwen3.8-27b"},
+				{"id":"qwen3-vl-embedding-8b"},{"id":"gpt-4o"},
+				{"id":"qwen3-reranker-4b"}]}`)
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"OK\"}}]}\n\n")
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	client := api.New(upstream.URL, "test-key", 5*time.Second)
+	cfg := config.Config{
+		APIKey:  "test-key",
+		BaseURL: upstream.URL,
+		Model:   "default-chat",
+		Timeout: 5 * time.Second,
+		Models:  []string{"fallback-old"}, // discovery must replace this
+	}
+	ts := httptest.NewServer(New(client, cfg).Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/models")
+	if err != nil {
+		t.Fatalf("GET /api/models: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var data struct {
+		Models  []string `json:"models"`
+		Current string   `json:"current"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		t.Fatalf("decode /api/models: %v", err)
+	}
+
+	want := []string{"default-chat", "default-coding", "qwen3.8-27b", "gpt-4o"}
+	if !reflect.DeepEqual(data.Models, want) {
+		t.Fatalf("models = %v, want %v (non-chat models must be filtered)", data.Models, want)
+	}
+	if data.Current != "default-chat" {
+		t.Fatalf("current = %q, want default-chat", data.Current)
 	}
 }
 

@@ -15,15 +15,25 @@ const (
 	DefaultBaseURL = "https://api.openai.com/v1"
 	DefaultModel   = "gpt-4o-mini"
 	DefaultTimeout = 5 * time.Minute
+
+	// DefaultReserveBaseURL is the fallback provider used by the [reserve]
+	// model: an external OpenAI-compatible endpoint independent of the main
+	// GPUStack API (OpenCode Zen).
+	DefaultReserveBaseURL = "https://opencode.ai/zen/v1"
+	// DefaultReserveModel is the free model of the reserve provider.
+	DefaultReserveModel = "glm-5.3-flash-free"
 )
 
 // DefaultModels is the chat model list used when AI_MODELS is not set.
 var DefaultModels = []string{
 	"glm-5.3-flash",
+	"default-chat",
+	"default-coding",
+	"default-pr-review",
+	"gpt-4o",
+	"qwen3.8-27b",
 	"deepseek-v4-flash",
 	"deepseek-v4.1-flash",
-	"qwen3.8-27b",
-	"gpt-4o",
 }
 
 // Config holds all settings needed to talk to an OpenAI-compatible API.
@@ -35,6 +45,12 @@ type Config struct {
 	Timeout   time.Duration
 	MaxTokens int
 	Models    []string
+
+	// Reserve is an independent fallback provider bypassing the main API: when
+	// the main provider is unavailable, the chat can switch to it.
+	ReserveBaseURL string
+	ReserveAPIKey  string
+	ReserveModel   string
 }
 
 // Load reads .env (if present) and then the environment variables.
@@ -75,7 +91,21 @@ func Load() (Config, error) {
 		cfg.Models = append([]string(nil), DefaultModels...)
 	}
 
+	// Reserve provider (active when both a URL and a key are configured).
+	cfg.ReserveBaseURL = strings.TrimRight(strings.TrimSpace(envOr("AI_RESERVE_BASE_URL", DefaultReserveBaseURL)), "/")
+	cfg.ReserveAPIKey = strings.TrimSpace(os.Getenv("AI_RESERVE_API_KEY"))
+	cfg.ReserveModel = strings.TrimSpace(envOr("AI_RESERVE_MODEL", DefaultReserveModel))
+	if cfg.ReserveModel == "" {
+		cfg.ReserveModel = DefaultReserveModel
+	}
+
 	return cfg, nil
+}
+
+// ReserveConfigured reports whether the reserve provider can actually serve
+// requests: a key is present (or the endpoint is local and needs none).
+func (c Config) ReserveConfigured() bool {
+	return c.ReserveAPIKey != "" || isLocalURL(c.ReserveBaseURL)
 }
 
 // Validate checks that the configuration can be used for a request.

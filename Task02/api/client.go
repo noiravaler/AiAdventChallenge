@@ -139,6 +139,10 @@ type streamChunk struct {
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
+			// Reasoning models stream their thinking trace before the answer;
+			// providers use either field name for it.
+			ReasoningRC string `json:"reasoning_content"`
+			ReasoningR  string `json:"reasoning"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -204,6 +208,44 @@ func (c *Client) LastFinishReason() string {
 	return c.lastFinish
 }
 
+// ListModels returns the IDs of the models available on the server's
+// OpenAI-compatible /models endpoint.
+func (c *Client) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, responseError(resp)
+	}
+
+	var body struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode models: %w", err)
+	}
+	ids := make([]string, 0, len(body.Data))
+	for _, m := range body.Data {
+		if m.ID != "" {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids, nil
+}
+
 // Chat sends a non-streaming request and returns the full answer.
 func (c *Client) Chat(ctx context.Context, model string, messages []Message, maxTokens int, opts ...Option) (answer string, err error) {
 	defer func() { c.logResponse(answer, err) }()
@@ -235,6 +277,18 @@ func (c *Client) Chat(ctx context.Context, model string, messages []Message, max
 // StreamChat sends a streaming request, calls onDelta for every token chunk
 // and returns the complete answer. onDelta may be nil.
 func (c *Client) StreamChat(ctx context.Context, model string, messages []Message, maxTokens int, onDelta func(string), opts ...Option) (answer string, err error) {
+	return c.streamChat(ctx, model, messages, maxTokens, onDelta, nil, opts...)
+}
+
+// StreamChatWithActivity behaves like StreamChat but additionally calls
+// onActivity for every received model token (content or reasoning trace).
+// Callers use it to detect that the model is alive while visible content has
+// not started yet. onActivity may be nil.
+func (c *Client) StreamChatWithActivity(ctx context.Context, model string, messages []Message, maxTokens int, onDelta func(string), onActivity func(), opts ...Option) (answer string, err error) {
+	return c.streamChat(ctx, model, messages, maxTokens, onDelta, onActivity, opts...)
+}
+
+func (c *Client) streamChat(ctx context.Context, model string, messages []Message, maxTokens int, onDelta func(string), onActivity func(), opts ...Option) (answer string, err error) {
 	defer func() { c.logResponse(answer, err) }()
 	c.logMu.Lock()
 	c.lastFinish = ""
@@ -287,6 +341,11 @@ func (c *Client) StreamChat(ctx context.Context, model string, messages []Messag
 				c.logMu.Unlock()
 			}
 			if choice.Delta.Content == "" {
+				// Reasoning chunks are not shown in the chat but still prove
+				// the model is generating; surface them through onActivity.
+				if onActivity != nil && (choice.Delta.ReasoningRC != "" || choice.Delta.ReasoningR != "") {
+					onActivity()
+				}
 				continue
 			}
 			sb.WriteString(choice.Delta.Content)

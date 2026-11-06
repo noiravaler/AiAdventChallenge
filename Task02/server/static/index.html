@@ -221,6 +221,16 @@
   .contact .cname { min-width: 0; font-size: 13px; word-break: break-all; }
   .contact.active .cname { font-weight: 700; color: #2e7f8f; }
 
+  /* Резервная модель [reserve]: выбираемая, как обычные модели */
+  .contact.reserve { cursor: pointer; border: 1px dashed #2e7f8f; background: #f2fafc; }
+  .contact.reserve:hover { background: #e4f4f8; }
+  .contact.reserve:active { background: #d5edf3; }
+  .contact.reserve .cavatar { background: #7fb6c2; }
+  .contact.reserve .cname { color: #2e7f8f; }
+  .contact.reserve.active { background: #e4f4f8; }
+  .contact.reserve.active .cname { font-weight: 700; }
+  .contact.reserve.off { opacity: .5; }
+
   .sb-select, .sb-input {
     width: 100%;
     padding: 9px 10px;
@@ -233,9 +243,9 @@
   }
   .sb-select:focus, .sb-input:focus { outline: none; border-color: #2e7f8f; box-shadow: 0 0 0 2px rgba(46, 127, 143, .25); }
   .sb-input { margin-top: 6px; background: #fff; }
-  .sb-range { width: 100%; accent-color: #2e7f8f; }
-  .tok-row { display: flex; align-items: baseline; justify-content: space-between; }
-  .tok-val { color: #2e7f8f; font-weight: 700; }
+  .sb-range { flex: 1 1 auto; min-width: 0; width: auto; accent-color: #2e7f8f; }
+  .tok-row { display: flex; align-items: center; gap: 10px; }
+  .tok-val { color: #2e7f8f; font-weight: 700; white-space: nowrap; flex: none; }
   .hint { color: #7fa8b3; font-size: 12px; margin: 5px 4px 0; line-height: 1.4; }
   textarea { resize: vertical; font-family: inherit; }
   .sb-textarea {
@@ -507,6 +517,19 @@
 
       <div class="collaps">
         <button class="collaps-head" type="button">
+          <span>Допустимый таймаут ответа</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="tok-row">
+            <input type="range" id="timeout" class="sb-range" min="5" max="30" step="1" value="10">
+            <span class="tok-val" id="timeoutVal">10 с</span>
+          </div>
+          <div class="hint">Допустимый таймаут ответа от 5 до 30 секунд</div>
+        </div>
+      </div>
+
+      <div class="collaps">
+        <button class="collaps-head" type="button">
           <span>Stop sequence</span><span class="chev">▾</span>
         </button>
         <div class="collaps-body">
@@ -614,6 +637,8 @@
   const tokRange = document.getElementById('tokens');
   const stopSeqEl = document.getElementById('stopSeq');
   const tokVal = document.getElementById('tokVal');
+  const timeoutRange = document.getElementById('timeout');
+  const timeoutVal = document.getElementById('timeoutVal');
   const detailsToggle = document.getElementById('detailsToggle');
   const closeDetails = document.getElementById('closeDetails');
   const reqJsonEl = document.getElementById('reqJson');
@@ -632,6 +657,7 @@
     jsonschema_structured: { label: 'JSON Schema structured output', desc: 'Ответ по JSON Schema со strict-режимом' },
   };
   const clampTok = (v) => Math.min(15000, Math.max(1, Math.trunc(Number(v) || 1)));
+  const clampTimeout = (v) => Math.min(30, Math.max(5, Math.trunc(Number(v) || 10)));
 
   const scrollDown = () => { log.scrollTop = log.scrollHeight; };
   const RE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
@@ -702,6 +728,7 @@
       message: text,
       format: formatSel.value,
       maxTokens: clampTok(tokRange.value),
+      timeout: clampTimeout(timeoutRange.value),
     };
     if (formatSel.value !== 'text') bodyObj.schema = schemaField.value.trim();
     if (stopSeqEl.value.trim() !== '') bodyObj.stop = stopSeqEl.value.trim();
@@ -834,8 +861,32 @@
     }
   }
 
-  function renderContacts(models, current) {
+  function renderContacts(models, current, reserveCfg) {
     contactsEl.innerHTML = '';
+    // Резервная модель ([reserve]): внешний провайдер, не связанный с GPUStack.
+    // reserveCfg = {model, ready} от /api/models; работает как обычная модель —
+    // по клику переключает, при активации подсвечивается; когда провайдер не
+    // настроен — затемнена.
+    if (reserveCfg && reserveCfg.model) {
+      const reserveId = reserveCfg.model;
+      const rBtn = document.createElement('button');
+      rBtn.type = 'button';
+      rBtn.className = 'contact reserve' + (reserveCfg.ready ? '' : ' off');
+      rBtn.dataset.model = reserveId;
+      rBtn.title = reserveCfg.ready
+        ? 'Переключиться на резервную модель ' + reserveId + ' (внешний провайдер)'
+        : 'Резервный провайдер не настроен: задайте AI_RESERVE_BASE_URL и AI_RESERVE_API_KEY в .env';
+      const rAv = document.createElement('span');
+      rAv.className = 'cavatar';
+      rAv.textContent = 'R';
+      const rNm = document.createElement('span');
+      rNm.className = 'cname';
+      rNm.textContent = '[reserve] ' + reserveId;
+      rBtn.appendChild(rAv);
+      rBtn.appendChild(rNm);
+      rBtn.addEventListener('click', () => selectModel(reserveId));
+      contactsEl.appendChild(rBtn);
+    }
     for (const m of models) {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -884,6 +935,8 @@
     syncFormat();
     tokRange.value = tokRange.max;
     tokVal.textContent = tokRange.max;
+    timeoutRange.value = 10;
+    timeoutVal.textContent = '10 с';
     stopSeqEl.value = '';
   }
   resetAllBtn.addEventListener('click', resetAll);
@@ -897,6 +950,7 @@
   }
   formatSel.addEventListener('change', syncFormat);
   tokRange.addEventListener('input', () => { tokVal.textContent = clampTok(tokRange.value); });
+  timeoutRange.addEventListener('input', () => { timeoutVal.textContent = clampTimeout(timeoutRange.value) + ' с'; });
 
   function keySpan(key) {
     const s = document.createElement('span');
@@ -1042,7 +1096,7 @@
       }
       try {
         const mi = await (await fetch('/api/models')).json();
-        renderContacts(mi.models, mi.current);
+        renderContacts(mi.models, mi.current, { model: mi.reserve, ready: mi.reserve_ready });
       } catch (e) { /* меню недоступно — не критично */ }
       syncFormat();
       clearDetails();
