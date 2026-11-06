@@ -1,0 +1,1156 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Чат</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #d9dcdd;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+
+  /* Приложение занимает всё окно браузера */
+  .app {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    background: #4fa6b5;
+  }
+
+  /* Боковая панель «Настройки» */
+  .sidebar {
+    flex: 0 0 280px;
+    min-width: 280px;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border-right: 1px solid #d8e2e6;
+    z-index: 5;
+  }
+  .sb-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 14px 12px;
+    color: #2e7f8f;
+    font-size: 15px;
+    font-weight: 700;
+    border-bottom: 1px solid #e3ecef;
+  }
+  .sb-scroll { flex: 1; overflow-y: auto; padding: 8px 10px 16px; }
+
+  /* Сворачиваемые блоки */
+  .collaps {
+    border: 1px solid #e3ecef;
+    border-radius: 12px;
+    margin: 10px 0;
+    background: #fff;
+    overflow: hidden;
+  }
+  .collaps-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 0;
+    background: #f4f8f9;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: #2e7f8f;
+    text-align: left;
+  }
+  .collaps-head:hover { background: #eef4f6; }
+  .collaps-head .chev { transition: transform .15s; font-size: 12px; color: #7fa8b3; }
+  .collaps.closed .chev { transform: rotate(-90deg); }
+  .collaps-body { padding: 8px 12px 12px; }
+  .collaps.closed .collaps-body { display: none; }
+
+  .sb-label {
+    display: block;
+    color: #5a8790;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    margin: 0 4px 6px;
+  }
+  .hint { color: #7fa8b3; font-size: 12px; margin: 6px 4px 0; line-height: 1.4; }
+
+  /* Ползунок таймаута */
+  .timeout-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 4px;
+  }
+  .timeout-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 999px;
+    background: #d8e2e6;
+    outline: none;
+    cursor: pointer;
+  }
+  .timeout-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #2e7f8f;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px #2e7f8f;
+    cursor: pointer;
+  }
+  .timeout-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #2e7f8f;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px #2e7f8f;
+    cursor: pointer;
+  }
+  .timeout-value {
+    min-width: 44px;
+    text-align: right;
+    color: #2e7f8f;
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Список моделей */
+  .contacts { display: block; }
+  .contact {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 10px;
+    margin: 2px 0;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: #143a44;
+  }
+  .contact:hover { background: #dff0f4; }
+  .contact .cavatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #2e7f8f;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex: none;
+  }
+  .contact .cname { min-width: 0; font-size: 13px; word-break: break-all; }
+  .contact.active .cname { font-weight: 700; color: #2e7f8f; }
+
+  /* Резервная модель [reserve] */
+  .contact.reserve { cursor: pointer; border: 1px dashed #2e7f8f; background: #f2fafc; }
+  .contact.reserve:hover { background: #e4f4f8; }
+  .contact.reserve:active { background: #d5edf3; }
+  .contact.reserve .cavatar { background: #7fb6c2; }
+  .contact.reserve .cname { color: #2e7f8f; }
+  .contact.reserve.active { background: #e4f4f8; }
+  .contact.reserve.active .cname { font-weight: 700; }
+  .contact.reserve.off { opacity: .5; }
+
+  /* Чек-боксы */
+  .checks { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #143a44;
+    cursor: pointer;
+    padding: 3px 2px;
+  }
+  .check input { accent-color: #2e7f8f; width: 16px; height: 16px; flex: none; }
+  .check input:disabled { cursor: not-allowed; }
+
+  /* Блок «Эксперты»: разблокируется только при выборе «Эксперт» */
+  .collaps.locked { opacity: .55; }
+  .collaps.locked .collaps-body { pointer-events: none; }
+
+  /* Основная панель «Результаты» */
+  .mainpanel {
+    flex: 1;
+    min-width: 0;
+    padding: 18px;
+    overflow-y: auto;
+    background: #4fa6b5;
+  }
+  .result-block {
+    border: 1px solid #e3ecef;
+    border-radius: 12px;
+    margin: 0 0 16px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .result-block-head {
+    padding: 11px 14px;
+    background: #f4f8f9;
+    color: #2e7f8f;
+    font-weight: 700;
+    font-size: 14px;
+    border-bottom: 1px solid #e3ecef;
+  }
+  .result-block-body { padding: 14px; }
+  .field {
+    margin: 0 0 14px;
+  }
+  .field:last-child { margin-bottom: 0; }
+  .field-label {
+    display: block;
+    color: #5a8790;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    margin: 0 0 6px;
+  }
+  .control {
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid #d8e2e6;
+    background: #f4f8f9;
+    font-size: 13px;
+    font-family: inherit;
+    color: #143a44;
+  }
+  .control:focus { outline: none; border-color: #2e7f8f; box-shadow: 0 0 0 2px rgba(46, 127, 143, .25); }
+  textarea.control { min-height: 96px; resize: vertical; }
+  .cond-box { background: #fbfcfc; }
+  .cond-box[readonly] { color: #5a8790; }
+
+  .run-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 16px;
+  }
+  /* Прогресс-бар выполнения решений */
+  .run-progress {
+    flex: 1;
+    height: 14px;
+    background: #eef4f6;
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #2e7f8f;
+    border-radius: 999px;
+    transition: width .2s ease;
+  }
+  .progress-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #143a44;
+  }
+  .run-btn {
+    display: inline-block;
+    padding: 11px 20px;
+    border: 0;
+    border-radius: 10px;
+    background: #2e7f8f;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .15s ease;
+  }
+  .run-btn:hover { background: #256a78; }
+  .run-btn:active { background: #1f5a66; }
+  .run-btn.disabled { opacity: .55; cursor: not-allowed; }
+  .run-btn.disabled:hover { background: #2e7f8f; }
+  .run-btn.disabled:active { background: #2e7f8f; }
+
+  /* Вкладки «Решения» (low / high) */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e3ecef;
+    flex-wrap: wrap;
+  }
+  .tabs .tab {
+    padding: 8px 16px;
+    border: 1px solid #d8e2e6;
+    border-radius: 10px;
+    background: #f4f8f9;
+    color: #5a8790;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .tabs .tab:hover { background: #eaf2f4; color: #2e7f8f; }
+  .tabs .tab.active {
+    background: #2e7f8f;
+    color: #fff;
+    border-color: #2e7f8f;
+  }
+  .tab-pane[hidden] { display: none; }
+
+  /* Таблица «Решения» */
+  .solutions-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .solutions-table th,
+  .solutions-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid #eef4f6;
+    vertical-align: top;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .solutions-table th {
+    color: #2e7f8f;
+    font-weight: 700;
+    background: #f4f8f9;
+    white-space: nowrap;
+  }
+  .solutions-table td { color: #143a44; }
+  .solutions-table tr:last-child td { border-bottom: 0; }
+  .solutions-table .empty td { text-align: center; color: #9db8c0; font-style: italic; }
+
+  /* Колонки «Решения» */
+  .solutions-table .method-cell { white-space: nowrap; }
+  .solutions-table .num-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .solutions-table .ok { color: #1f9d55; font-weight: 700; font-size: 16px; }
+  .solutions-table .fail { color: #d64545; font-weight: 700; font-size: 16px; }
+  .solutions-table .stop { color: #d64545; font-weight: 700; font-size: 16px; }
+  .solutions-table .err { color: #d64545; font-weight: 700; font-size: 16px; }
+
+  /* Раскрывающийся блок «Ход решения» — форматированный текст */
+  .solutions-table details { }
+  .solutions-table summary {
+    cursor: pointer;
+    color: #2e7f8f;
+    font-weight: 700;
+    font-size: 12px;
+    user-select: none;
+  }
+  .solutions-table summary:hover { text-decoration: underline; }
+  .solutions-table .solution-body,
+  .conclusion-body {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    background: #f4f8f9;
+    border: 1px solid #e3ecef;
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #143a44;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    max-width: 100%;
+  }
+  .solution-body h1, .solution-body h2, .solution-body h3, .solution-body h4,
+  .conclusion-body h1, .conclusion-body h2, .conclusion-body h3, .conclusion-body h4 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #2e7f8f;
+    margin: 10px 0 4px;
+  }
+  .solution-body h1:first-child, .solution-body h2:first-child,
+  .solution-body h3:first-child, .solution-body h4:first-child,
+  .conclusion-body h1:first-child, .conclusion-body h2:first-child,
+  .conclusion-body h3:first-child, .conclusion-body h4:first-child { margin-top: 0; }
+  .solution-body p, .conclusion-body p { margin: 0 0 8px; }
+  .solution-body p:last-child, .conclusion-body p:last-child { margin-bottom: 0; }
+  .solution-body ul, .solution-body ol, .conclusion-body ul, .conclusion-body ol { margin: 0 0 8px; padding-left: 20px; }
+  .solution-body li, .conclusion-body li { margin: 2px 0; }
+  .solution-body code, .conclusion-body code {
+    background: #eef4f6;
+    border: 1px solid #e3ecef;
+    border-radius: 5px;
+    padding: 1px 5px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #0b3a44;
+  }
+  .solution-body .math, .conclusion-body .math {
+    display: block;
+    margin: 8px 0;
+    padding: 8px 10px;
+    background: #eef4f6;
+    border: 1px solid #e3ecef;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    color: #0b3a44;
+  }
+  .solution-body .inline-math, .conclusion-body .inline-math {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: #eef4f6;
+    border-radius: 5px;
+    padding: 1px 4px;
+    color: #0b3a44;
+  }
+  .solution-body table, .conclusion-body table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 8px 0;
+    font-size: 12.5px;
+  }
+  .solution-body table th, .solution-body table td,
+  .conclusion-body table th, .conclusion-body table td {
+    border: 1px solid #dbe7ea;
+    padding: 6px 9px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .solution-body table th, .conclusion-body table th {
+    background: #eef4f6;
+    color: #2e7f8f;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head"><span>Настройки</span></div>
+    <div class="sb-scroll">
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Модели</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="contacts" id="contacts"></div>
+        </div>
+      </div>
+
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Таймаут</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="timeout-row">
+            <input type="range" id="timeoutSlider" class="timeout-slider" min="10" max="60" step="1" value="10" />
+            <span id="timeoutValue" class="timeout-value">10 с</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Способы решения</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="checks">
+            <label class="check"><input type="checkbox" value="direct"> Прямой ответ</label>
+            <label class="check"><input type="checkbox" value="stepwise"> Пошаговое решение</label>
+            <label class="check"><input type="checkbox" value="prompt"> Через промпт</label>
+            <label class="check"><input type="checkbox" value="expert" id="expertCheck"> Эксперт</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="collaps locked" id="expertsBlock">
+        <button class="collaps-head" type="button">
+          <span>Эксперты</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="checks">
+            <label class="check"><input type="checkbox" value="mathematician" disabled> Математик</label>
+            <label class="check"><input type="checkbox" value="philosopher" disabled> Философ</label>
+            <label class="check"><input type="checkbox" value="critic" disabled> Критик</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="mainpanel" id="mainpanel">
+    <section class="result-block">
+        <div class="result-block-head">Задача</div>
+        <div class="result-block-body">
+          <div class="field">
+            <label class="field-label" for="taskSelect">Название</label>
+            <select id="taskSelect" class="control">
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="taskCondition">Условие</label>
+            <textarea id="taskCondition" class="control cond-box" placeholder="—" readonly></textarea>
+          </div>
+          <div class="field">
+            <label class="field-label" for="expectedAnswer">Ожидаемый ответ</label>
+            <input id="expectedAnswer" type="text" class="control" placeholder="—" readonly />
+          </div>
+        </div>
+      </section>
+
+      <div class="run-row">
+        <button id="runSolution" class="run-btn" type="button">Запустить решение</button>
+        <div id="runProgress" class="run-progress" hidden>
+          <div id="progressFill" class="progress-fill"></div>
+          <span id="progressText" class="progress-text"></span>
+        </div>
+      </div>
+
+      <section class="result-block">
+        <div class="result-block-head">Решения</div>
+        <div class="result-block-body">
+          <div class="tabs" id="solutionTabs">
+            <button class="tab active" type="button" data-tab="low" data-reasoning="low">Рассуждение: low</button>
+            <button class="tab" type="button" data-tab="high" data-reasoning="high">Рассуждение: high</button>
+          </div>
+          <div class="tab-pane" data-pane="low">
+            <table class="solutions-table">
+              <thead>
+                <tr>
+                  <th>Наименование способа</th>
+                  <th>Токены</th>
+                  <th>Время</th>
+                  <th>Успех</th>
+                  <th>Детали</th>
+                </tr>
+              </thead>
+              <tbody id="lowBody">
+                <tr class="empty">
+                  <td colspan="5">— решений пока нет —</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="tab-pane" data-pane="high" hidden>
+            <table class="solutions-table">
+              <thead>
+                <tr>
+                  <th>Наименование способа</th>
+                  <th>Токены</th>
+                  <th>Время</th>
+                  <th>Успех</th>
+                  <th>Детали</th>
+                </tr>
+              </thead>
+              <tbody id="highBody">
+                <tr class="empty">
+                  <td colspan="5">— решений пока нет —</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="result-block" id="conclusionBlock" hidden>
+        <div class="result-block-head">Вывод</div>
+        <div class="result-block-body">
+          <div id="conclusionBody" class="conclusion-body"><span class="pending">Анализирую результаты…</span></div>
+        </div>
+      </section>
+  </main>
+</div>
+
+<script>
+  const appEl = document.getElementById('app');
+  const contactsEl = document.getElementById('contacts');
+  const expertCheck = document.getElementById('expertCheck');
+  const expertsBlock = document.getElementById('expertsBlock');
+  const expertInputs = expertsBlock.querySelectorAll('input[type=checkbox]');
+  const taskSelect = document.getElementById('taskSelect');
+  const taskCondition = document.getElementById('taskCondition');
+  const expectedAnswer = document.getElementById('expectedAnswer');
+  const runSolution = document.getElementById('runSolution');
+  const lowBody = document.getElementById('lowBody');
+  const highBody = document.getElementById('highBody');
+  const solutionTabs = document.getElementById('solutionTabs');
+  const methodChecks = Array.from(document.querySelectorAll('.checks input[type=checkbox]'))
+    .filter(el => !['expert', 'mathematician', 'philosopher', 'critic'].includes(el.value));
+  const runProgress = document.getElementById('runProgress');
+  const progressFill = document.getElementById('progressFill');
+  const progressText = document.getElementById('progressText');
+  const timeoutSlider = document.getElementById('timeoutSlider');
+  const timeoutValue = document.getElementById('timeoutValue');
+  const conclusionBlock = document.getElementById('conclusionBlock');
+  const conclusionBody = document.getElementById('conclusionBody');
+
+  // Ползунок таймаута: показывает текущее значение в секундах.
+  timeoutSlider.addEventListener('input', () => {
+    timeoutValue.textContent = timeoutSlider.value + ' с';
+  });
+
+  // Сворачивание/разворачивание блоков настроек
+  document.querySelectorAll('.collaps-head').forEach(h => {
+    h.addEventListener('click', () => {
+      const box = h.closest('.collaps');
+      if (box) box.classList.toggle('closed');
+    });
+  });
+
+  // --- Табы «Решения»: переключение между low / high ---
+  function activeTabReasoning() {
+    const t = solutionTabs.querySelector('.tab.active');
+    return t ? t.dataset.reasoning : 'low';
+  }
+  solutionTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab');
+    if (!btn) return;
+    solutionTabs.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
+    const reasoning = btn.dataset.reasoning;
+    document.querySelectorAll('.tab-pane').forEach(pane => {
+      pane.hidden = pane.dataset.pane !== reasoning;
+    });
+  });
+
+  // --- Способы решения: выбор «Эксперт» разблокирует блок «Эксперты» ---
+  function syncExperts() {
+    const enabled = expertCheck.checked;
+    expertsBlock.classList.toggle('locked', !enabled);
+    expertInputs.forEach(inp => { inp.disabled = !enabled; inp.checked = enabled && inp.checked ? inp.checked : false; });
+  }
+  expertCheck.addEventListener('change', syncExperts);
+
+  // --- Запуск решения ---
+  const METHOD_LABELS = { direct: 'Прямой ответ', stepwise: 'Пошаговое решение', prompt: 'Через промпт', expert: 'Эксперт' };
+
+  function selectedExperts() {
+    return Array.from(expertInputs).filter(inp => inp.checked).map(inp => inp.value);
+  }
+
+  function collectRuns() {
+    const runs = [];
+    for (const cb of methodChecks) {
+      if (!cb.checked) continue;
+      runs.push({ method: cb.value });
+    }
+    // «Эксперт» — отдельный способ: по одному запуску на каждого выбранного эксперта.
+    if (expertCheck.checked) {
+      for (const ex of selectedExperts()) {
+        runs.push({ method: 'expert', expert: ex });
+      }
+    }
+    return runs;
+  }
+
+  function setRunBtnDisabled(disabled) {
+    runSolution.disabled = disabled;
+    runSolution.classList.toggle('disabled', disabled);
+  }
+
+  function renderEmptyRow(tbody, msg) {
+    tbody.innerHTML = '';
+    const tr = document.createElement('tr');
+    tr.className = 'empty';
+    tr.innerHTML = `<td colspan="5">${msg}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  function methodName(run) {
+    if (run.method === 'expert') return 'Эксперт: ' + expertLabel(run.expert);
+    return METHOD_LABELS[run.method] || run.method;
+  }
+
+  function formatDuration(ms) {
+    if (ms == null) return '—';
+    if (ms < 1000) return ms + ' мс';
+    return (ms / 1000).toFixed(1) + ' с';
+  }
+
+  // --- Лёгкий Markdown → HTML для «Ход решения» ---
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Инлайн-разметка: `код`, **жирный**, *курсив*, $...$ / \(...\) (формулы),
+  // \text{...} / \mathrm{...} — обычный текст внутри формул.
+  function inlineMd(s) {
+    return latexToText(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .replace(/\$([^$]+)\$/g, (m, g) => '<span class="inline-math">' + inlineFromMath(g) + '</span>')
+      .replace(/\\?\(([^)]+)\)/g, (m, g) => '<span class="inline-math">' + inlineFromMath(g) + '</span>')
+      .replace(/\\text\{([^}]*)\}/g, '$1')
+      .replace(/\\mathrm\{([^}]*)\}/g, '$1');
+  }
+
+  // Соответствие часто встречающихся LaTeX-команд отображаемым символам.
+  const LATEX_SYMBOLS = {
+    '\\cdot': '·', '\\times': '×', '\\div': '÷', '\\pm': '±', '\\mp': '∓',
+    '\\Rightarrow': '⇒', '\\rightarrow': '→', '\\Leftarrow': '⇐',
+    '\\leftarrow': '←', '\\Leftrightarrow': '⇔', '\\leftrightarrow': '↔',
+    '\\leq': '≤', '\\le': '≤', '\\geq': '≥', '\\ge': '≥',
+    '\\neq': '≠', '\\ne': '≠', '\\approx': '≈', '\\equiv': '≡',
+    '\\infty': '∞', '\\sum': '∑', '\\int': '∫', '\\prod': '∏',
+    '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\delta': 'δ',
+    '\\pi': 'π', '\\mu': 'μ', '\\lambda': 'λ', '\\theta': 'θ',
+    '\\in': '∈', '\\subset': '⊂', '\\cup': '∪', '\\cap': '∩',
+    '\\sqrt': '√', '\\gcd': 'gcd', '\\ge': '≥',
+  };
+
+  // Нормализация LaTeX-конструкций от модели: \frac{a}{b} → (a)/(b),
+  // \left(/\right( → ( / ), \left[ → [, \quad/\;→ пробел.
+  function fixLatex(s) {
+    return String(s)
+      .replace(/\\left\(/g, '(')
+      .replace(/\\right\)/g, ')')
+      .replace(/\\left\[/g, '[')
+      .replace(/\\right\]/g, ']')
+      .replace(/\\left\{/g, '{')
+      .replace(/\\right\}/g, '}')
+      .replace(/\\left\|/g, '|')
+      .replace(/\\right\|/g, '|')
+      .replace(/\\left\./g, '')
+      .replace(/\\right\./g, '')
+      .replace(/\\\[/g, '[')
+      .replace(/\\\]/g, ']')
+      .replace(/\\qquad/g, '  ')
+      .replace(/\\quad/g, ' ')
+      .replace(/\\;/g, ' ')
+      .replace(/\\,/g, ' ')
+      .replace(/\\!/g, '')
+      .replace(/\\left/g, '')
+      .replace(/\\right/g, '')
+      .replace(/\\(?:frac|dfrac|tfrac)\{([^{}]*)\}\{([^{}]*)\}/g, '($1)/($2)')
+      .replace(/\\([()\[\]{}|])/g, '$1');
+  }
+
+  // Преобразует известные LaTeX-команды в символы; остальное оставляет как есть.
+  function latexToText(s) {
+    return fixLatex(s).replace(/\\[a-zA-Z]+/g, (m) => (LATEX_SYMBOLS[m] !== undefined ? LATEX_SYMBOLS[m] : m));
+  }
+
+  // Блочная формула: escapeHtml, убираем \begin/\end, "\\" → <br>, \text{} → текст.
+  function blockMath(raw) {
+    return latexToText(escapeHtml(raw))
+      .replace(/\\begin\{[a-zA-Z*]*\}/g, '')
+      .replace(/\\end\{[a-zA-Z*]*\}/g, '')
+      .replace(/\\text\{([^}]*)\}/g, '$1')
+      .replace(/\\mathrm\{([^}]*)\}/g, '$1')
+      .replace(/\s*\\\\\s*/g, '<br>')
+      .trim();
+  }
+
+  // Очистка содержимого инлайн-формулы: \text{...} → текст, \[x\] → x,
+  // одиночный \ перед не-буквой/пробелом и хвостовой \ убираются, "\\" — пробел.
+  function inlineFromMath(s) {
+    return latexToText(s)
+      .replace(/\\text\{([^}]*)\}/g, '$1')
+      .replace(/\\mathrm\{([^}]*)\}/g, '$1')
+      .replace(/\\allowdisplaybreaks/g, '')
+      .replace(/\s*\\\$\s*/g, ' ')
+      .replace(/\s*\\\\\s*/g, ' ')
+      .replace(/\\([^a-zA-Z\s])/g, '$1')
+      .replace(/\\+$/g, '')
+      .replace(/\\ /g, ' ')
+      .trim();
+  }
+
+  // Преобразует текст решения в HTML с форматированием.
+  function renderMarkdown(text) {
+    if (!text) return '';
+    // Защищаем блочные формулы: $...$, \[...\] и LaTeX-окружения \begin{...}...\end{...}
+    // (cases, matrix, aligned и т.п.), где \\ — разделитель строк.
+    const blocks = [];
+    let src = text
+      .replace(/\$\$([\s\S]+?)\$\$/g, (m, g) => { blocks.push('<div class="math">' + blockMath(g) + '</div>'); return '\u0000'; })
+      .replace(/\\\[([\s\S]+?)\\\]/g, (m, g) => { blocks.push('<div class="math">' + blockMath(g) + '</div>'); return '\u0000'; })
+      .replace(/\\begin\{([a-zA-Z*]+)\}([\s\S]+?)\\end\{\1\}/g, (m, env, inner) => {
+        blocks.push('<div class="math">' + blockMath(inner) + '</div>');
+        return '\u0000';
+      });
+
+    const lines = escapeHtml(src).split('\n');
+    const out = [];
+    let inList = null;
+    let para = [];
+
+    const flushPara = () => {
+      if (para.length) { out.push('<p>' + para.map(inlineMd).join('<br>') + '</p>'); para = []; }
+    };
+    const closeList = () => { if (inList) { out.push('</' + inList + '>'); inList = null; } };
+
+    // Рендер Markdown-таблицы из последовательных строк вида | a | b |.
+    const renderTable = (rows) => {
+      const cells = rows.map(r => r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim()));
+      let header = cells[0] || [];
+      let body = cells.slice(1);
+      // Отбрасываем строку-разделитель |---|:---|, если она есть.
+      if (body.length && body[0].every(c => /^:?-{2,}:?$/.test(c))) body = body.slice(1);
+      if (!body.length) { body = header; header = []; }
+      let h = '<table>';
+      if (header.length) {
+        h += '<thead><tr>' + header.map(c => '<th>' + inlineMd(c) + '</th>').join('') + '</tr></thead>';
+      }
+      h += '<tbody>' + body.map(r => '<tr>' + r.map(c => '<td>' + inlineMd(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table>';
+      return h;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (trimmed === '') { flushPara(); closeList(); continue; }
+      // Блочные формулы-заглушки, восстановленные из blocks, вставляем как есть.
+      if (trimmed === '\u0000') { flushPara(); closeList(); out.push(blocks.shift() || ''); continue; }
+      // Markdown-таблица: собираем подряд идущие строки, начинающиеся с '|'.
+      if (/^\|/.test(trimmed)) {
+        flushPara(); closeList();
+        const rows = [line];
+        while (i + 1 < lines.length && /^\s*\|/.test(lines[i + 1])) { i++; rows.push(lines[i]); }
+        out.push(renderTable(rows));
+        continue;
+      }
+      const heading = trimmed.match(/^(#{1,4})\s+(.*)$/);
+      if (heading) {
+        flushPara(); closeList();
+        const lvl = heading[1].length;
+        out.push('<h' + lvl + '>' + inlineMd(heading[2]) + '</h' + lvl + '>');
+        continue;
+      }
+      if (/^[-*]\s+/.test(trimmed)) {
+        flushPara();
+        if (inList !== 'ul') { closeList(); out.push('<ul>'); inList = 'ul'; }
+        out.push('<li>' + inlineMd(trimmed.replace(/^[-*]\s+/, '')) + '</li>');
+        continue;
+      }
+      if (/^\d+\.\s+/.test(trimmed)) {
+        flushPara();
+        if (inList !== 'ol') { closeList(); out.push('<ol>'); inList = 'ol'; }
+        out.push('<li>' + inlineMd(trimmed.replace(/^\d+\.\s+/, '')) + '</li>');
+        continue;
+      }
+      closeList();
+      para.push(trimmed);
+    }
+    flushPara();
+    closeList();
+    // Вставляем оставшиеся формулы.
+    while (blocks.length) out.push(blocks.shift());
+    return out.join('\n');
+  }
+
+  // --- Прогресс выполнения решений ---
+  function setProgress(done, total) {
+    if (total <= 0) {
+      runProgress.hidden = true;
+      return;
+    }
+    runProgress.hidden = false;
+    const pct = Math.round((done / total) * 100);
+    progressFill.style.width = pct + '%';
+    progressText.textContent = done + ' / ' + total;
+  }
+
+  function expertLabel(key) {
+    return ({ mathematician: 'Математик', philosopher: 'Философ', critic: 'Критик' })[key] || key;
+  }
+
+  // Запускает один способ решения с жёстким клиентским таймаутом: если сервер
+  // не ответил за timeout секунд, запрос прерывается (AbortController), чтобы
+  // кнопка/прогресс не «зависали». Возвращает объект результата или бросает
+  // ошибку, которую runSolutions превращает в строку со стоп-иконкой.
+  async function runOne(run, timeoutSec, reasoning) {
+    const condition = taskCondition.value;
+    const expected = expectedAnswer.value;
+    const timeout = Math.max(parseInt(timeoutSlider.value, 10) || 10, 1);
+
+    // Клиентский дедлайн чуть больше серверного, чтобы успевал прийти timed_out.
+    const clientTimeoutMs = (timeout + 2) * 1000;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), clientTimeoutMs);
+
+    let resp;
+    try {
+      resp = await fetch('/api/solve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: run.method, expert: run.expert || '', condition, expected, timeout, reasoning }),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      // Обрыв по клиентскому таймауту (после серверного) → считаем таймаутом.
+      throw new Error(ctrl.signal.aborted ? ('Превышен таймаут ' + timeout + ' с — решение остановлено') : (e.message || 'Ошибка запроса'));
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!resp.ok) throw new Error((await resp.text()).trim() || ('HTTP ' + resp.status));
+    return resp.json();
+  }
+
+  async function runSolutions() {
+    const runs = collectRuns();
+    if (runs.length === 0) {
+      renderEmptyRow(lowBody, '— выберите хотя бы один способ решения —');
+      renderEmptyRow(highBody, '— выберите хотя бы один способ решения —');
+      return;
+    }
+    if (!taskSelect.value) {
+      renderEmptyRow(lowBody, '— выберите задачу —');
+      renderEmptyRow(highBody, '— выберите задачу —');
+      return;
+    }
+
+    setRunBtnDisabled(true);
+    lowBody.innerHTML = '';
+    highBody.innerHTML = '';
+    conclusionBlock.hidden = true;
+    conclusionBody.textContent = 'Анализирую результаты…';
+    const reasons = ['low', 'high'];
+    const total = runs.length * reasons.length;
+    const collected = [];
+    setProgress(0, total);
+    let done = 0;
+
+    try {
+      // Для каждого уровня рассуждения (low/high) выполняются все выбранные
+      // методы по очереди; строка добавляется только после готовности.
+      for (const reasoning of reasons) {
+        const tbody = reasoning === 'low' ? lowBody : highBody;
+        for (const run of runs) {
+          let res;
+          try {
+            res = await runOne(run, timeoutSlider.value, reasoning);
+          } catch (err) {
+            // Ошибка/таймаут: строим строку с пометкой; не прерываем остальные способы.
+            res = { error: err.message || 'Ошибка', duration: null, tokens: null };
+          }
+          tbody.appendChild(buildSolutionRow(run, res));
+          done++;
+          setProgress(done, total);
+          collected.push({ run, res, reasoning });
+        }
+      }
+      await buildConclusion(taskCondition.value, expectedAnswer.value, collected);
+    } finally {
+      setRunBtnDisabled(false);
+      runProgress.hidden = true;
+    }
+  }
+
+  // Собирает и отображает блок «Вывод»: отправляет на сервер все полученные
+  // результаты и просит модель проанализировать их и сделать вывод.
+  async function buildConclusion(condition, expected, collected) {
+    if (!collected || collected.length === 0) return;
+    conclusionBlock.hidden = false;
+    conclusionBody.textContent = 'Анализирую результаты…';
+    try {
+      const resp = await fetch('/api/conclusion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          condition,
+          expected,
+          results: collected.map(({ run, res, reasoning }) => ({
+            name: methodName(run),
+            method: run.method,
+            expert: run.expert || '',
+            reasoning: reasoning,
+            tokens: res.tokens != null ? res.tokens : 0,
+            success: !!res.success,
+            timed_out: !!res.timed_out,
+            error: res.error || '',
+            solution: res.solution || '',
+          })),
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      if (data.analysis) {
+        conclusionBody.innerHTML = renderMarkdown(data.analysis);
+      } else {
+        conclusionBody.textContent = '(Вывод отсутствует)';
+      }
+    } catch (err) {
+      conclusionBody.textContent = 'Не удалось сформировать вывод: ' + (err.message || err);
+    }
+  }
+
+  function buildSolutionRow(run, res) {
+    const tr = document.createElement('tr');
+    // Колонка «Успех»: таймаут → иконка-стоп, ошибка → красная негативная иконка,
+    // иначе ✓ при совпадении с ожидаемым ответом / ✗ при несовпадении.
+    const success = res.timed_out
+      ? `<span class="stop" title="${escapeHtml(res.error)}">&#9208;</span>`
+      : res.error
+        ? `<span class="err" title="${escapeHtml(res.error)}">&#10005;</span>`
+        : (res.success ? '<span class="ok">✓</span>' : '<span class="fail">✗</span>');
+    const tokens = res.tokens != null ? res.tokens : '—';
+    const duration = formatDuration(res.duration);
+    // Детали: текст причины для таймаута/ошибки, иначе отформатированный ход решения.
+    let solutionHtml;
+    if (res.timed_out) {
+      solutionHtml = escapeHtml('⏹ Остановлено: ' + (res.error || 'превышен таймаут'));
+    } else if (res.error) {
+      solutionHtml = escapeHtml('Ошибка: ' + res.error);
+    } else if (res.solution) {
+      solutionHtml = renderMarkdown(res.solution);
+    } else {
+      solutionHtml = escapeHtml(res.reason || '(пустой ответ)');
+    }
+
+    tr.innerHTML = `
+      <td class="method-cell">${escapeHtml(methodName(run))}</td>
+      <td class="num-cell">${escapeHtml(String(tokens))}</td>
+      <td class="num-cell">${escapeHtml(duration)}</td>
+      <td>${success}</td>
+      <td>
+        <details>
+          <summary>Детали</summary>
+          <div class="solution-body">${solutionHtml}</div>
+        </details>
+      </td>`;
+    return tr;
+  }
+
+  runSolution.addEventListener('click', runSolutions);
+
+  // --- Задачи ---
+  const TASKS = [
+    {
+      name: 'Логическая задача',
+      condition: 'На острове живёт 100 людей с синими глазами и 100 с карими. Каждый островитянин знает цвет глаз всех остальных, но не знает цвет своих собственных. Островитяне не могут видеть своё отражение, не могут говорить друг с другом о цвете глаз, а также всегда соблюдают два правила: Если человек узнаёт, что у него синие глаза, он обязан покинуть остров в ту же ночь. Каждый всегда логически безупречен и всем известно, что все безупречны. В один день приезжает мудрец и публично объявляет: «Я вижу хотя бы одного человека с синими глазами» (что все и так знали — ведь синеглазых сто).',
+      answer: 'Все 100 синеглазых покинут остров ровно на 100-ю ночь после объявления.',
+    },
+    {
+      name: 'Алгоритмическая задача',
+      condition: 'Дан массив целых чисел a длиной n и целое число k. Найдите количество непрерывных подотрезков, сумма элементов которых равна k.',
+      answer: '2',
+    },
+    {
+      name: 'Аналитическая задача',
+      condition: 'На оси Ox даны точки A(1; 2) и B(5; 4). Найдите точку C на оси абсцисс, для которой сумма AC + CB минимальна.',
+      answer: 'C(7/3; 0)',
+    },
+  ];
+
+  function fillTaskFields() {
+    const task = TASKS.find(t => t.name === taskSelect.value);
+    if (task) {
+      taskCondition.value = task.condition;
+      expectedAnswer.value = task.answer;
+    } else {
+      taskCondition.value = '';
+      expectedAnswer.value = '';
+    }
+  }
+
+  function populateTasks() {
+    for (const task of TASKS) {
+      const opt = document.createElement('option');
+      opt.value = task.name;
+      opt.textContent = task.name;
+      taskSelect.appendChild(opt);
+    }
+  }
+  populateTasks();
+  taskSelect.addEventListener('change', fillTaskFields);
+  fillTaskFields();
+
+  // --- Модели (блок без изменений) ---
+  function highlightContacts(current) {
+    for (const el of contactsEl.children) {
+      el.classList.toggle('active', el.dataset.model === current);
+    }
+  }
+
+  function renderContacts(models, current, reserveCfg) {
+    contactsEl.innerHTML = '';
+    if (reserveCfg && reserveCfg.model) {
+      const reserveId = reserveCfg.model;
+      const rBtn = document.createElement('button');
+      rBtn.type = 'button';
+      rBtn.className = 'contact reserve' + (reserveCfg.ready ? '' : ' off');
+      rBtn.dataset.model = reserveId;
+      rBtn.title = reserveCfg.ready
+        ? 'Переключиться на резервную модель ' + reserveId + ' (внешний провайдер)'
+        : 'Резервный провайдер не настроен: задайте AI_RESERVE_BASE_URL и AI_RESERVE_API_KEY в .env';
+      const rAv = document.createElement('span');
+      rAv.className = 'cavatar';
+      rAv.textContent = 'R';
+      const rNm = document.createElement('span');
+      rNm.className = 'cname';
+      rNm.textContent = '[reserve] ' + reserveId;
+      rBtn.appendChild(rAv);
+      rBtn.appendChild(rNm);
+      rBtn.addEventListener('click', () => selectModel(reserveId));
+      contactsEl.appendChild(rBtn);
+    }
+    for (const m of models) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'contact';
+      btn.dataset.model = m;
+      const av = document.createElement('span');
+      av.className = 'cavatar';
+      av.textContent = m.slice(0, 1).toUpperCase();
+      const nm = document.createElement('span');
+      nm.className = 'cname';
+      nm.textContent = m;
+      btn.appendChild(av);
+      btn.appendChild(nm);
+      btn.addEventListener('click', () => selectModel(m));
+      contactsEl.appendChild(btn);
+    }
+    highlightContacts(current);
+  }
+
+  async function selectModel(model) {
+    try {
+      const resp = await fetch('/api/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      if (!resp.ok) throw new Error((await resp.text()).trim() || ('HTTP ' + resp.status));
+    } catch (err) {
+      console.error('Не удалось переключить модель:', err.message || err);
+      return;
+    }
+    highlightContacts(model);
+    document.title = 'AI Чат — ' + model;
+  }
+
+  (async function init() {
+    try {
+      const info = await (await fetch('/api/info')).json();
+      document.title = 'AI Чат — ' + info.model;
+      const mi = await (await fetch('/api/models')).json();
+      renderContacts(mi.models, mi.current, { model: mi.reserve, ready: mi.reserve_ready });
+    } catch (err) {
+      console.error('Не удалось загрузить модели:', err.message || err);
+    }
+  })();
+</script>
+</body>
+</html>
