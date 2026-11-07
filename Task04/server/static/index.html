@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Чат</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #d9dcdd;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+
+  /* Приложение занимает всё окно браузера */
+  .app {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    background: #4fa6b5;
+  }
+
+
+  /* Основная панель «Результаты» */
+  .mainpanel {
+    flex: 1;
+    min-width: 0;
+    padding: 18px;
+    overflow-y: auto;
+    background: #4fa6b5;
+  }
+  .result-block {
+    border: 1px solid #e3ecef;
+    border-radius: 12px;
+    margin: 0 0 16px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .result-block-head {
+    padding: 11px 14px;
+    background: #f4f8f9;
+    color: #2e7f8f;
+    font-weight: 700;
+    font-size: 14px;
+    border-bottom: 1px solid #e3ecef;
+  }
+  .result-block-body { padding: 14px; }
+  .field {
+    margin: 0 0 14px;
+  }
+  .field:last-child { margin-bottom: 0; }
+  .field-label {
+    display: block;
+    color: #5a8790;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    margin: 0 0 6px;
+  }
+  .control {
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid #d8e2e6;
+    background: #f4f8f9;
+    font-size: 13px;
+    font-family: inherit;
+    color: #143a44;
+  }
+  .control:focus { outline: none; border-color: #2e7f8f; box-shadow: 0 0 0 2px rgba(46, 127, 143, .25); }
+  textarea.control { min-height: 0; height: auto; resize: none; overflow: hidden; }
+  .cond-box { background: #fbfcfc; }
+  .cond-box[readonly] { color: #5a8790; }
+
+  .run-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 16px;
+  }
+  /* Прогресс-бар выполнения решений */
+  .run-progress {
+    flex: 1;
+    height: 14px;
+    background: #eef4f6;
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #2e7f8f;
+    border-radius: 999px;
+    transition: width .2s ease;
+  }
+  .progress-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #143a44;
+  }
+  .run-btn {
+    display: inline-block;
+    padding: 11px 20px;
+    border: 0;
+    border-radius: 10px;
+    background: #2e7f8f;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .15s ease;
+  }
+  .run-btn:hover { background: #256a78; }
+  .run-btn:active { background: #1f5a66; }
+  .run-btn.disabled { opacity: .55; cursor: not-allowed; }
+  .run-btn.disabled:hover { background: #2e7f8f; }
+  .run-btn.disabled:active { background: #2e7f8f; }
+
+  /* Вкладки «Решения» (low / high) */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e3ecef;
+    flex-wrap: wrap;
+  }
+  .tabs .tab {
+    padding: 8px 16px;
+    border: 1px solid #d8e2e6;
+    border-radius: 10px;
+    background: #f4f8f9;
+    color: #5a8790;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .tabs .tab:hover { background: #eaf2f4; color: #2e7f8f; }
+  .tabs .tab.active {
+    background: #2e7f8f;
+    color: #fff;
+    border-color: #2e7f8f;
+  }
+  .tab-pane[hidden] { display: none; }
+
+  /* Таблица «Решения» */
+  .solutions-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .solutions-table th,
+  .solutions-table td {
+    text-align: left;
+    padding: 8px 10px;
+    border: 1px solid #e3ecef;
+    vertical-align: top;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .solutions-table th {
+    color: #2e7f8f;
+    font-weight: 700;
+    background: #f4f8f9;
+    white-space: nowrap;
+  }
+  .solutions-table td { color: #143a44; }
+  .solutions-table tr:last-child td { border-bottom: 1px solid #e3ecef; }
+  .solutions-table .empty td { text-align: center; color: #9db8c0; font-style: italic; }
+
+  /* Первая колонка — подписи температур (выделена цветом, ширина по тексту) */
+  .solutions-table td.temp-label {
+    background: #eef4f6;
+    color: #2e7f8f;
+    font-weight: 700;
+    white-space: nowrap;
+    text-align: left;
+    width: 1%;
+  }
+
+  /* Ячейки результатов: зелёная при верном ответе, красная при неверном.
+     Ширина фиксированная и одинаковая (равные доли), высота растёт по контенту. */
+  .solutions-table td.result-cell {
+    width: 19.8%;
+    text-align: center;
+    vertical-align: middle;
+    white-space: normal;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+  .solutions-table td.result-cell.ok {
+    background: #e3f6ec;
+    color: #11713a;
+  }
+  .solutions-table td.result-cell.fail {
+    background: #fdeaea;
+    color: #9b1c1c;
+  }
+
+  /* Блок «Вывод» */
+  .conclusion-body {
+    margin: 10px 0 0;
+    padding: 12px 14px;
+    background: #f4f8f9;
+    border: 1px solid #e3ecef;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #143a44;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Колонки «Решения» */
+  .solutions-table .method-cell { white-space: nowrap; }
+  .solutions-table .num-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .solutions-table .ok { color: #1f9d55; font-weight: 700; font-size: 16px; }
+  .solutions-table .fail { color: #d64545; font-weight: 700; font-size: 16px; }
+  .solutions-table .stop { color: #d64545; font-weight: 700; font-size: 16px; }
+  .solutions-table .err { color: #d64545; font-weight: 700; font-size: 16px; }
+
+  /* Раскрывающийся блок «Ход решения» — форматированный текст */
+  .solutions-table details { }
+  .solutions-table summary {
+    cursor: pointer;
+    color: #2e7f8f;
+    font-weight: 700;
+    font-size: 12px;
+    user-select: none;
+  }
+  .solutions-table summary:hover { text-decoration: underline; }
+  .solutions-table .solution-body,
+  .conclusion-body {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    background: #f4f8f9;
+    border: 1px solid #e3ecef;
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #143a44;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    max-width: 100%;
+  }
+  .solution-body h1, .solution-body h2, .solution-body h3, .solution-body h4,
+  .conclusion-body h1, .conclusion-body h2, .conclusion-body h3, .conclusion-body h4 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #2e7f8f;
+    margin: 10px 0 4px;
+  }
+  .solution-body h1:first-child, .solution-body h2:first-child,
+  .solution-body h3:first-child, .solution-body h4:first-child,
+  .conclusion-body h1:first-child, .conclusion-body h2:first-child,
+  .conclusion-body h3:first-child, .conclusion-body h4:first-child { margin-top: 0; }
+  .solution-body p, .conclusion-body p { margin: 0 0 8px; }
+  .solution-body p:last-child, .conclusion-body p:last-child { margin-bottom: 0; }
+  .solution-body ul, .solution-body ol, .conclusion-body ul, .conclusion-body ol { margin: 0 0 8px; padding-left: 20px; }
+  .solution-body li, .conclusion-body li { margin: 2px 0; }
+  .solution-body code, .conclusion-body code {
+    background: #eef4f6;
+    border: 1px solid #e3ecef;
+    border-radius: 5px;
+    padding: 1px 5px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #0b3a44;
+  }
+  .solution-body .math, .conclusion-body .math {
+    display: block;
+    margin: 8px 0;
+    padding: 8px 10px;
+    background: #eef4f6;
+    border: 1px solid #e3ecef;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    color: #0b3a44;
+  }
+  .solution-body .inline-math, .conclusion-body .inline-math {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: #eef4f6;
+    border-radius: 5px;
+    padding: 1px 4px;
+    color: #0b3a44;
+  }
+  .solution-body table, .conclusion-body table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 8px 0;
+    font-size: 12.5px;
+  }
+  .solution-body table th, .solution-body table td,
+  .conclusion-body table th, .conclusion-body table td {
+    border: 1px solid #dbe7ea;
+    padding: 6px 9px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .solution-body table th, .conclusion-body table th {
+    background: #eef4f6;
+    color: #2e7f8f;
+    font-weight: 700;
+  }
+
+  /* Верхний ряд: модель слева, два блока задач справа (одной высоты) */
+  .task-row {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: 0 0 16px;
+  }
+  .task-row .result-block {
+    flex: 1 1 260px;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .task-row .result-block .result-block-body { flex: 1; min-height: 0; }
+  .task-row .model-block { flex: 0 0 220px; display: flex; }
+  .task-row .model-block .result-block { width: 100%; }
+
+  /* Список моделей (прокрутка) */
+  .contacts {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 360px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .contact {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid #d8e2e6;
+    border-radius: 10px;
+    background: #f4f8f9;
+    font-family: inherit;
+    font-size: 12.5px;
+    color: #143a44;
+    cursor: pointer;
+    text-align: left;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .contact:hover { background: #eaf2f4; }
+  .contact.active { border-color: #2e7f8f; background: #e7f1f3; }
+  .contact.off { opacity: .55; }
+  .cavatar {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #2e7f8f;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cname {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <main class="mainpanel" id="mainpanel">
+    <div class="task-row">
+      <div class="model-block">
+        <section class="result-block">
+          <div class="result-block-head">Модель</div>
+          <div class="result-block-body">
+            <div id="contacts" class="contacts"></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="result-block" data-task="1">
+        <div class="result-block-head">Задача 1</div>
+        <div class="result-block-body">
+          <textarea id="taskText1" class="control cond-box" readonly>Каждое высказывание А, Б, В — истинно или ложно. Высказывание истинно тогда и только тогда, когда истинно то, о чём оно говорит.
+
+А: «Б — ложно».
+Б: «В — истинно».
+В: «А ложно ровно тогда, когда Б истинно».
+Какие высказывания истинны?</textarea>
+          <div class="field">
+            <label class="field-label" for="expected1">Ответ:</label>
+            <input id="expected1" type="text" class="control" value="А — ложно, Б и В — истинны." readonly />
+          </div>
+        </div>
+      </section>
+
+      <section class="result-block" data-task="2">
+        <div class="result-block-head">Задача 2</div>
+        <div class="result-block-body">
+          <textarea id="taskText2" class="control cond-box" readonly>Сгенерируй название для книги про врача супергероя, который борется с преступностью, заглядывая в окна домов</textarea>
+        </div>
+      </section>
+    </div>
+
+    <div class="run-row">
+      <button type="button" class="run-btn" id="runBtn">Выполнить</button>
+      <div class="run-progress" id="runProgress" hidden>
+        <div class="progress-fill" id="progressFill"></div>
+        <span class="progress-text" id="progressText"></span>
+      </div>
+    </div>
+
+    <div class="tabs" id="taskTabs">
+      <button class="tab active" type="button" data-tab="1">Задача 1</button>
+      <button class="tab" type="button" data-tab="2">Задача 2</button>
+    </div>
+
+    <section class="result-block tab-pane" data-pane="1">
+      <div class="result-block-head">Результаты</div>
+      <div class="result-block-body">
+        <table class="solutions-table">
+          <tbody id="resultBody1">
+            <tr><td class="temp-label">Температура 0</td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td></tr>
+            <tr><td class="temp-label">Температура 0.7</td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td></tr>
+            <tr><td class="temp-label">Температура 1.2</td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="result-block tab-pane" data-pane="1" id="conclusionBlock1">
+      <div class="result-block-head">Вывод</div>
+      <div class="result-block-body">
+        <div id="conclusionBody1" class="conclusion-body"></div>
+      </div>
+    </section>
+
+    <section class="result-block tab-pane" data-pane="2" hidden>
+      <div class="result-block-head">Результаты</div>
+      <div class="result-block-body">
+        <table class="solutions-table">
+          <tbody id="resultBody2">
+            <tr><td class="temp-label">Температура 0</td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td></tr>
+            <tr><td class="temp-label">Температура 0.7</td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td></tr>
+            <tr><td class="temp-label">Температура 1.2</td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td><td class="result-cell"></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="result-block tab-pane" data-pane="2" id="conclusionBlock2" hidden>
+      <div class="result-block-head">Вывод</div>
+      <div class="result-block-body">
+        <div id="conclusionBody2" class="conclusion-body"></div>
+      </div>
+    </section>
+
+    <section class="result-block" id="generalConclusionBlock">
+      <div class="result-block-head">Общий вывод</div>
+      <div class="result-block-body">
+        <div id="generalConclusionBody" class="conclusion-body"><span class="pending">Сформирую общий вывод после выполнения…</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const appEl = document.getElementById('app');
+  const taskTabs = document.getElementById('taskTabs');
+  const contactsEl = document.getElementById('contacts');
+  const runBtn = document.getElementById('runBtn');
+  const runProgress = document.getElementById('runProgress');
+  const progressFill = document.getElementById('progressFill');
+  const progressText = document.getElementById('progressText');
+  const generalConclusionBody = document.getElementById('generalConclusionBody');
+
+  let currentModel = '';
+  let activeTab = '1';
+  let modelsList = [];
+  let reserveCfg = { model: '', ready: false };
+
+  // --- Переключение вкладок «Задача 1» / «Задача 2» (панели «Результаты» и «Вывод») ---
+  function syncPanes() {
+    document.querySelectorAll('.tab-pane').forEach(p => { p.hidden = p.dataset.pane !== activeTab; });
+  }
+  taskTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab');
+    if (!btn) return;
+    taskTabs.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
+    activeTab = btn.dataset.tab;
+    syncPanes();
+  });
+
+  // --- Выбор модели (аналогично другим задачам) ---
+  function renderContacts(models, current, reserveCfg) {
+    contactsEl.innerHTML = '';
+    const list = (models || []).concat(reserveCfg && reserveCfg.model ? [reserveCfg.model] : []);
+    for (const m of list) {
+      const isReserve = reserveCfg && m === reserveCfg.model;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'contact' + (m === current ? ' active' : '') + (isReserve && !reserveCfg.ready ? ' off' : '');
+      btn.dataset.model = m;
+      const av = document.createElement('span');
+      av.className = 'cavatar';
+      av.textContent = isReserve ? 'R' : m.slice(0, 1).toUpperCase();
+      const nm = document.createElement('span');
+      nm.className = 'cname';
+      nm.textContent = isReserve ? '[reserve] ' + m : m;
+      btn.appendChild(av);
+      btn.appendChild(nm);
+      btn.addEventListener('click', () => selectModel(m));
+      contactsEl.appendChild(btn);
+    }
+  }
+
+  async function selectModel(model) {
+    try {
+      const resp = await fetch('/api/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      if (!resp.ok) throw new Error((await resp.text()).trim() || ('HTTP ' + resp.status));
+    } catch (err) {
+      console.error('Не удалось переключить модель:', err.message || err);
+      return;
+    }
+    currentModel = model;
+    renderContacts(modelsList, model, reserveCfg);
+    document.title = 'AI Чат — ' + model;
+  }
+
+  // --- Константы запуска ---
+  const TEMPERATURES = [0, 0.7, 1.2];
+  const REQUESTS_PER_TEMP = 5;
+  const RUN_TIMEOUT = 30; // секунд
+
+  // Автовысота текстового поля по содержимому.
+  function autosizeTextarea(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+
+  function autosizeAll() {
+    document.querySelectorAll('.task-row textarea').forEach(autosizeTextarea);
+  }
+
+  // --- Запуск одного запроса к модели с повтором при ошибке/таймауте ---
+  const MAX_ATTEMPTS = 3; // сколько раз пытаемся выполнить запрос
+  async function runOne(condition, expected, temperature, timeout) {
+    let lastErr = null;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        const resp = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ condition, expected, temperature, timeout }),
+        });
+        // Сервер вернул ошибку (5xx/4xx) — повторить.
+        if (!resp.ok) throw new Error((await resp.text()).trim() || ('HTTP ' + resp.status));
+        const res = await resp.json();
+        // Серверный таймаут или ошибка модели — повторить.
+        if (res.reason) throw new Error(res.reason);
+        return res;
+      } catch (err) {
+        lastErr = err;
+        // Небольшая задержка перед повтором, не затягиваем.
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    }
+    throw lastErr || new Error('Не удалось выполнить запрос');
+  }
+
+  function setProgress(done, total) {
+    runProgress.hidden = false;
+    progressFill.style.width = Math.round((done / total) * 100) + '%';
+    progressText.textContent = done + ' / ' + total;
+  }
+
+  // --- Запуск одной задачи (заполняет её таблицу результатов) и возвращает результаты ---
+  async function runSingle(taskId, baseDone, total) {
+    const condition = document.getElementById('taskText' + taskId).value.trim();
+    // Задача 2: нет эталонного ответа — не валидируем правильность.
+    const validate = taskId === 1;
+    const expected = validate ? document.getElementById('expected' + taskId).value.trim() : '';
+
+    const tbody = document.getElementById('resultBody' + taskId);
+    // Вывод на вкладке 1 всегда отображается; прячем его только для задачи 2.
+    if (taskId === 2) document.getElementById('conclusionBlock2').hidden = true;
+
+    const results = [];
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    let done = baseDone;
+    for (let ti = 0; ti < TEMPERATURES.length; ti++) {
+      const temp = TEMPERATURES[ti];
+      const cells = rows[ti] ? Array.from(rows[ti].querySelectorAll('td.result-cell')) : [];
+      // Очистить ячейки от предыдущего прогона.
+      for (const c of cells) { c.innerHTML = ''; c.classList.remove('ok', 'fail'); }
+      for (let i = 0; i < REQUESTS_PER_TEMP; i++) {
+        let res;
+        try {
+          res = await runOne(condition, expected, temp, RUN_TIMEOUT);
+        } catch (err) {
+          res = { success: false, answer: err.message || 'Ошибка' };
+        }
+        const cell = cells[i];
+        if (cell) {
+          cell.innerHTML = renderMarkdown(res.answer != null ? res.answer : (res.success ? '✓' : '✗'));
+          if (validate) {
+            cell.classList.remove('ok', 'fail');
+            cell.classList.add(res.success ? 'ok' : 'fail');
+          }
+        }
+        results.push({
+          temperature: temp,
+          answer: res.answer != null ? res.answer : '',
+          success: !validate || !!res.success,
+          reason: res.reason || '',
+        });
+        done++;
+        setProgress(done, total);
+      }
+    }
+    return { condition, expected, results, validate };
+  }
+
+  // --- Общий запуск: сначала обе задачи, после чего формируются выводы ---
+  async function runAll() {
+    const condition1 = document.getElementById('taskText1').value.trim();
+    const condition2 = document.getElementById('taskText2').value.trim();
+    if (!condition1 && !condition2) return;
+
+    runBtn.disabled = true;
+    runBtn.classList.add('disabled');
+    const total = (condition1 ? 1 : 0) * TEMPERATURES.length * REQUESTS_PER_TEMP
+                + (condition2 ? 1 : 0) * TEMPERATURES.length * REQUESTS_PER_TEMP;
+    setProgress(0, total);
+    let done = 0;
+
+    try {
+      // Сначала выполняем запросы для обеих задач (без выводов).
+      const data1 = condition1 ? await runSingle(1, done, total) : null;
+      done += data1 ? data1.results.length : 0;
+      const data2 = condition2 ? await runSingle(2, done, total) : null;
+      done += data2 ? data2.results.length : 0;
+
+      // Затем формируем выводы (сначала для задачи 2, потом для задачи 1).
+      if (data2) await buildConclusion(2, data2);
+      if (data1) await buildConclusion(1, data1);
+
+      // Общий вывод — анализ по всем ответам обеих задач.
+      await buildGeneralConclusion(data1, data2);
+    } finally {
+      runBtn.disabled = false;
+      runBtn.classList.remove('disabled');
+      runProgress.hidden = true;
+    }
+  }
+
+  // --- Markdown → HTML для блока «Вывод» ---
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Инлайн-форматирование: `код`, **жирный**, *курсив*.
+  function inlineMd(s) {
+    return escapeHtml(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  }
+
+  // Преобразует строку Markdown в HTML (заголовки, списки, таблицы, абзацы).
+  function renderMarkdown(text) {
+    const lines = String(text || '').split('\n');
+    const out = [];
+    let para = [];
+
+    function flushPara() {
+      if (para.length) {
+        out.push('<p>' + inlineMd(para.join(' ')) + '</p>');
+        para = [];
+      }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (trimmed === '') { flushPara(); continue; }
+
+      const hMatch = trimmed.match(/^(#{1,4})\s+(.*)$/);
+      if (hMatch) { flushPara(); const level = hMatch[1].length; out.push('<h' + level + '>' + inlineMd(hMatch[2]) + '</h' + level + '>'); continue; }
+
+      if (/^[-*]\s+/.test(trimmed)) {
+        flushPara(); out.push('<ul>');
+        while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) { out.push('<li>' + inlineMd(lines[i].trim().replace(/^[-*]\s+/, '')) + '</li>'); i++; }
+        out.push('</ul>'); i--; continue;
+      }
+      if (/^\d+\.\s+/.test(trimmed)) {
+        flushPara(); out.push('<ol>');
+        while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) { out.push('<li>' + inlineMd(lines[i].trim().replace(/^\d+\.\s+/, '')) + '</li>'); i++; }
+        out.push('</ol>'); i--; continue;
+      }
+      if (trimmed.startsWith('|')) {
+        flushPara();
+        const rows = [];
+        while (i < lines.length && lines[i].trim().startsWith('|')) { rows.push(lines[i].trim()); i++; }
+        i--; out.push(renderTable(rows)); continue;
+      }
+      para.push(trimmed);
+    }
+    flushPara();
+    return out.join('');
+  }
+
+  function renderTable(rows) {
+    const cells = rows.map(r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim()));
+    const bodyRows = cells.filter(c => !(c.length === 1 && /^:?-{2,}:?$/.test(c[0])));
+    if (bodyRows.length === 0) return '';
+    let html = '<table><thead><tr>' + bodyRows[0].map(c => '<th>' + inlineMd(c) + '</th>').join('') + '</tr></thead><tbody>';
+    for (let i = 1; i < bodyRows.length; i++) {
+      html += '<tr>' + bodyRows[i].map(c => '<td>' + inlineMd(c) + '</td>').join('') + '</tr>';
+    }
+    return html + '</tbody></table>';
+  }
+
+  // «Вывод» — после запросов по задаче просим модель проанализировать результаты.
+  async function buildConclusion(taskId, data) {
+    const block = document.getElementById('conclusionBlock' + taskId);
+    const body = document.getElementById('conclusionBody' + taskId);
+    if (!block || !body || !data.results.length) return;
+    // Показываем «Вывод» только для активной вкладки, а не безусловно.
+    block.hidden = String(taskId) !== activeTab;
+    body.textContent = 'Анализирую результаты…';
+    try {
+      const resp = await fetch('/api/run-conclusion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ condition: data.condition, expected: data.expected, results: data.results }),
+      });
+      const res = await resp.json();
+      if (!resp.ok) throw new Error(res.error || ('HTTP ' + resp.status));
+      body.innerHTML = res.analysis ? renderMarkdown(res.analysis) : '(Вывод отсутствует)';
+    } catch (err) {
+      body.textContent = 'Не удалось сформировать вывод: ' + (err.message || err);
+    }
+  }
+
+  runBtn.addEventListener('click', runAll);
+
+  // «Общий вывод» — по всем ответам обеих задач: какая настройка подходит для какой
+  // задачи, и стабилен ли ответ при temperature = 0.
+  async function buildGeneralConclusion(data1, data2) {
+    if (!generalConclusionBody) return;
+    const tasks = [];
+    if (data1 && data1.results.length) {
+      tasks.push({ title: 'Задача 1', condition: data1.condition, expected: data1.expected, results: data1.results });
+    }
+    if (data2 && data2.results.length) {
+      tasks.push({ title: 'Задача 2', condition: data2.condition, expected: data2.expected, results: data2.results });
+    }
+    if (!tasks.length) return;
+
+    generalConclusionBody.textContent = 'Анализирую все ответы…';
+    try {
+      const resp = await fetch('/api/general-conclusion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tasks }),
+      });
+      const res = await resp.json();
+      if (!resp.ok) throw new Error(res.error || ('HTTP ' + resp.status));
+      generalConclusionBody.innerHTML = res.analysis ? renderMarkdown(res.analysis) : '(Общий вывод отсутствует)';
+    } catch (err) {
+      generalConclusionBody.textContent = 'Не удалось сформировать общий вывод: ' + (err.message || err);
+    }
+  }
+
+  // Инициализация: выбрать модель и подогнать текстовые поля.
+  (async function init() {
+    try {
+      const mi = await (await fetch('/api/models')).json();
+      currentModel = mi.current || (mi.models && mi.models[0]) || '';
+      modelsList = mi.models || [];
+      reserveCfg = { model: mi.reserve, ready: mi.reserve_ready };
+      renderContacts(modelsList, mi.current, reserveCfg);
+    } catch (err) {
+      console.error('Не удалось загрузить модели:', err.message || err);
+    }
+    autosizeAll();
+  })();
+</script>
+</body>
+</html>
