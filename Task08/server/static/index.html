@@ -1,0 +1,1650 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Чат</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #d9dcdd;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+
+  /* Приложение занимает всё окно браузера */
+  .app {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    background: #4fa6b5;
+  }
+
+  /* Боковая панель «Настройки» */
+  .sidebar {
+    flex: 0 0 280px;
+    min-width: 280px;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border-right: 1px solid #d8e2e6;
+    z-index: 5;
+  }
+  .app.collapsed .sidebar { display: none; }
+
+  /* Правая панель «Детали» */
+  .details {
+    flex: 40 1 0;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border-left: 1px solid #d8e2e6;
+    z-index: 5;
+  }
+  .app.collapsed-details .details { display: none; }
+  .app.collapsed-details .resizer { display: none; }
+
+  /* Перетаскиваемая граница между чатом и «Деталями» */
+  .resizer {
+    flex: 0 0 8px;
+    cursor: col-resize;
+    position: relative;
+    z-index: 6;
+    background: transparent;
+  }
+  .resizer::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    background: #b9dbe2;
+    transition: background .15s, width .15s, margin-left .15s;
+  }
+  .resizer:hover::after, .resizer.dragging::after {
+    background: #2e7f8f;
+    width: 4px;
+    margin-left: -2px;
+  }
+  .resizer:hover { background: rgba(46, 127, 143, .05); }
+  body.resizing { cursor: col-resize; user-select: none; }
+
+  .sb-head, .dt-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 14px 12px;
+    color: #2e7f8f;
+    font-size: 15px;
+    font-weight: 700;
+    border-bottom: 1px solid #e3ecef;
+  }
+  .sb-close {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    background: transparent;
+    color: #2e7f8f;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+  .sb-close:hover { background: #dff0f4; }
+  .sb-scroll { flex: 1; overflow-y: auto; padding: 8px 10px 16px; }
+  .reset-all {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    margin: 0 0 8px;
+    border: 1px solid #2e7f8f;
+    border-radius: 12px;
+    background: #eef7f9;
+    color: #2e7f8f;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .reset-all:hover { background: #dff0f4; }
+  .reset-all:active { background: #cfe9ee; transform: translateY(1px); }
+  .reset-all svg { display: block; }
+  .dt-scroll { flex: 1; overflow-y: auto; padding: 8px 12px 16px; }
+
+  /* Сворачиваемые блоки */
+  .collaps {
+    border: 1px solid #e3ecef;
+    border-radius: 12px;
+    margin: 10px 0;
+    background: #fff;
+    overflow: hidden;
+  }
+  .collaps-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 0;
+    background: #f4f8f9;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: #2e7f8f;
+    text-align: left;
+  }
+  .collaps-head:hover { background: #eef4f6; }
+  .collaps-head .chev { transition: transform .15s; font-size: 12px; color: #7fa8b3; }
+  .collaps.closed .chev { transform: rotate(-90deg); }
+  .collaps-body { padding: 8px 12px 12px; }
+  .collaps.closed .collaps-body { display: none; }
+  .collaps-body.prebox { padding: 0; }
+  .collaps-body pre {
+    margin: 0;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #143a44;
+    background: #fbfcfc;
+    height: 220px;
+    min-height: 60px;
+    max-height: 70vh;
+    overflow: auto;
+    resize: vertical;
+  }
+  .collaps.err {
+    background: #fbe3e3;
+    border: 1px solid #e04444;
+  }
+  .collaps.err .collaps-head {
+    background: #fbe3e3;
+    color: #a00000;
+  }
+  .collaps.err .collaps-head:hover { background: #f7d2d2; }
+  .collaps.err .collaps-head .chev { color: #a00000; }
+  .collaps.err .collaps-body {
+    background: #fbe3e3;
+  }
+  .collaps.err pre {
+    color: #a00000;
+    background: transparent;
+  }
+  .sb-label {
+    display: block;
+    color: #5a8790;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    margin: 0 4px 6px;
+  }
+  .contacts { display: block; }
+  .contact {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 10px;
+    margin: 2px 0;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: #143a44;
+  }
+  .contact:hover { background: #dff0f4; }
+  .contact .cavatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #2e7f8f;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex: none;
+  }
+  .contact .cname { min-width: 0; font-size: 13px; word-break: break-all; }
+  .contact.active { background: #e4f4f8; box-shadow: inset 0 0 0 2px #2e7f8f; }
+  .contact.active .cname { font-weight: 700; color: #2e7f8f; }
+
+  /* Резервная модель [reserve]: выбираемая, как обычные модели */
+  .contact.reserve { cursor: pointer; border: 1px dashed #2e7f8f; background: #f2fafc; }
+  .contact.reserve:hover { background: #e4f4f8; }
+  .contact.reserve:active { background: #d5edf3; }
+  .contact.reserve .cavatar { background: #7fb6c2; }
+  .contact.reserve .cname { color: #2e7f8f; }
+  .contact.reserve.active { background: #e4f4f8; }
+  .contact.reserve.active .cname { font-weight: 700; }
+  .contact.reserve.off { opacity: .5; }
+
+  .sb-select, .sb-input {
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid #d8e2e6;
+    background: #f4f8f9;
+    font-size: 13px;
+    font-family: inherit;
+    color: #143a44;
+  }
+  .sb-select:focus, .sb-input:focus { outline: none; border-color: #2e7f8f; box-shadow: 0 0 0 2px rgba(46, 127, 143, .25); }
+  .sb-input { margin-top: 6px; background: #fff; }
+  .sb-range { flex: 1 1 auto; min-width: 0; width: auto; accent-color: #2e7f8f; }
+  .tok-row { display: flex; align-items: center; gap: 10px; }
+  .tok-val { color: #2e7f8f; font-weight: 700; white-space: nowrap; flex: none; }
+  .hint { color: #7fa8b3; font-size: 12px; margin: 5px 4px 0; line-height: 1.4; }
+  textarea { resize: vertical; font-family: inherit; }
+  .sb-textarea {
+    width: 100%;
+    min-height: 96px;
+    margin-top: 6px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid #d8e2e6;
+    background: #fff;
+    font-size: 13px;
+    color: #143a44;
+    resize: vertical;
+  }
+  .sb-textarea:focus { outline: none; border-color: #2e7f8f; box-shadow: 0 0 0 2px rgba(46, 127, 143, .25); }
+
+  /* Область чата */
+  .body {
+    flex: 60 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: #4fa6b5;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    background: #2e7f8f;
+  }
+  .hbtn {
+    width: 38px;
+    height: 38px;
+    border: 0;
+    background: transparent;
+    color: #dff0f4;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+  .hbtn:hover { background: rgba(255, 255, 255, .14); }
+  .hbtn:active { background: rgba(255, 255, 255, .24); }
+  .hbtn.active { background: rgba(255, 255, 255, .28); color: #fff; }
+  .hbtn svg { display: block; }
+  .pushright { margin-left: auto; }
+  .avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #dff0f4;
+    color: #2e7f8f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: .5px;
+    flex: none;
+  }
+  .titles { min-width: 0; }
+  .name { color: #fff; font-size: 15px; font-weight: 600; line-height: 1.2; }
+  .status {
+    color: #c9e6ec;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .status.typing { font-style: italic; }
+
+  .log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 14px 10px;
+    background: #4fa6b5;
+  }
+  .divider {
+    text-align: center;
+    color: #cfe9ee;
+    font-size: 12px;
+    margin: 4px 0 12px;
+  }
+  .row { display: flex; margin: 0 0 10px; }
+  .row.user { justify-content: flex-end; }
+  .row.old { opacity: 0.72; }
+  .mtime {
+    font-size: 11.5px;
+    color: #ffffff;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(15, 58, 68, 0.55);
+    align-self: flex-end;
+    margin: 0 6px 5px;
+    flex: none;
+    white-space: nowrap;
+  }
+  .bubble {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 20px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: #143a44;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .row.ai .bubble { background: #dff0f4; }
+  .row.user .bubble { background: #fff; }
+  .bubble.md { white-space: normal; }
+  .bubble.md p { margin: 0 0 7px; }
+  .bubble.md p:last-child { margin-bottom: 0; }
+  .bubble.md h1, .bubble.md h2, .bubble.md h3,
+  .bubble.md h4, .bubble.md h5, .bubble.md h6 { margin: 9px 0 4px; font-weight: 600; line-height: 1.3; }
+  .bubble.md h1 { font-size: 17px; }
+  .bubble.md h2 { font-size: 16px; }
+  .bubble.md h3 { font-size: 15px; }
+  .bubble.md h4, .bubble.md h5, .bubble.md h6 { font-size: 14px; }
+  .bubble.md ul, .bubble.md ol { margin: 4px 0 7px; padding-left: 22px; }
+  .bubble.md li { margin: 2px 0; }
+  .bubble.md code {
+    background: rgba(20,58,68,.09);
+    padding: 1px 5px; border-radius: 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+  }
+  .bubble.md pre {
+    background: rgba(20,58,68,.09);
+    padding: 8px 10px; border-radius: 8px;
+    overflow-x: auto; margin: 7px 0;
+  }
+  .bubble.md pre code { background: none; padding: 0; font-size: 13px; }
+  .bubble.md a { color: #0b7285; text-decoration: underline; }
+  .bubble.md strong { font-weight: 600; }
+  .bubble.md em { font-style: italic; }
+  .bubble.md del { text-decoration: line-through; }
+  .bubble.md blockquote {
+    margin: 7px 0; padding-left: 10px; border-left: 3px solid #b8d6de; color: #40616b;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #bfe0e8;
+    align-self: flex-end;
+    margin: 0 2px 5px 6px;
+    flex: none;
+  }
+  .resend {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    background: rgba(255, 255, 255, .18);
+    color: #fff;
+    cursor: pointer;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 5px 6px 0;
+    align-self: flex-end;
+    opacity: 1;
+  }
+  .resend:hover { background: #dff0f4; color: #2e7f8f; }
+  .resend:disabled { opacity: .35; cursor: default; }
+  .resend svg { display: block; }
+  .errline {
+    text-align: center;
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 12px;
+    margin: 2px 0 10px;
+    text-shadow: 0 0 5px rgba(255, 23, 23, .95), 0 0 10px rgba(255, 23, 23, .75);
+  }
+
+  .inputbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: #fff;
+  }
+  .plus-wrap { position: relative; flex: none; }
+  .plus {
+    width: 34px;
+    height: 42px;
+    border: 1px solid #cfe4ea;
+    border-radius: 10px;
+    background: #eef7f9;
+    color: #2e7f8f;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .plus:hover { background: #d8eef2; border-color: #2e7f8f; }
+  .plus-menu {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    min-width: 210px;
+    background: #fff;
+    border: 1px solid #cfe4ea;
+    border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+    padding: 4px;
+    z-index: 40;
+  }
+  .plus-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: #143a44;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .plus-item:hover { background: #d8eef2; }
+  .inputbar input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: #dff0f4;
+    border-radius: 22px;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-family: inherit;
+    color: #143a44;
+  }
+  .inputbar input::placeholder { color: #7fa8b3; }
+  .inputbar input:focus { box-shadow: 0 0 0 2px rgba(46, 127, 143, .35); }
+  .send {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 0;
+    background: #2e7f8f;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: none;
+  }
+  .send:hover { background: #287180; }
+  .send:disabled { background: #9cc4cd; cursor: default; }
+  .send svg { display: block; }
+
+  /* Быстрые сообщения над полем ввода */
+  .quickbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px 2px;
+    background: #fff;
+  }
+  .quickchip {
+    border: 1px solid #cfe4ea;
+    background: #eef7f9;
+    color: #2e7f8f;
+    border-radius: 16px;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .12s, border-color .12s;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .quickchip:hover { background: #d8eef2; border-color: #2e7f8f; }
+  .quickchip:disabled { opacity: .5; cursor: default; }
+
+  /* Интерактивное JSON-дерево на панели «Детали» */
+  .json-root {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #143a44;
+  }
+  .jline { white-space: pre-wrap; }
+  .jtoggle {
+    display: inline-block;
+    flex: none;
+    width: 16px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #7fa8b3;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: inherit;
+    text-align: left;
+  }
+  .jtoggle:hover { color: #2e7f8f; }
+  .jtoggle-empty { flex: none; width: 16px; }
+  .jkey { color: #2e7f8f; word-break: break-all; }
+  .jbracket { color: #7fa8b3; }
+  .jval { color: #143a44; }
+  .jval.str { color: #8a2be2; }
+  .jval.num { color: #b25000; }
+  .jval.bool { color: #a00000; }
+  .jval.null { color: #808080; font-style: italic; }
+  .jbody { padding-left: 14px; }
+  .jdots { display: none; color: #7fa8b3; }
+  .jnode.closed .jdots { display: inline; }
+  .jnode.closed .jbody { display: none; }
+  .jfoot { padding-left: 16px; color: #7fa8b3; }
+
+  /* Шаги взаимодействия в панели «Детали» */
+  .stepsList { display: flex; flex-direction: column; gap: 8px; }
+  .stepblock {
+    border: 1px solid #d8e2e6;
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #f7fbfc;
+  }
+  .stephead {
+    color: #2e7f8f;
+    font-weight: 700;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .stepbody { color: #143a44; font-size: 12.5px; line-height: 1.45; word-break: break-word; }
+  .stepbody .fn { font-weight: 600; }
+  .stepresult {
+    color: #4b6a74;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .steptokens {
+    color: #4b6a74;
+    margin-top: 4px;
+    font-size: 11.5px;
+  }
+  .info-i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-left: 5px;
+    border: 1px solid #7fa8b3;
+    border-radius: 50%;
+    color: #7fa8b3;
+    font-size: 10px;
+    font-style: italic;
+    font-weight: 700;
+    cursor: help;
+    flex: none;
+    vertical-align: -2px;
+    position: relative;
+  }
+  .info-i:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 7px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #143a44;
+    color: #fff;
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1.4;
+    padding: 7px 9px;
+    border-radius: 8px;
+    width: max-content;
+    max-width: 240px;
+    white-space: normal;
+    text-align: left;
+    z-index: 60;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+  }
+  .info-i:hover::before {
+    content: '';
+    position: absolute;
+    bottom: calc(100% + 2px);
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 8px;
+    height: 8px;
+    background: #143a44;
+    z-index: 61;
+  }
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #eef3f5;
+    color: #4b6a74;
+    font-size: 12.5px;
+  }
+  .meta-row b { color: #143a44; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head">
+      <span>Настройки</span>
+      <button class="sb-close" id="closeSidebar" title="Свернуть панель" aria-label="Свернуть панель">×</button>
+    </div>
+    <div class="sb-scroll">
+      <button type="button" class="reset-all" id="resetSettings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+        </svg>
+        <span>Сбросить все</span>
+      </button>
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Модели</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="contacts" id="contacts"></div>
+        </div>
+      </div>
+
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Формат ответа</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <label class="sb-label" for="format">Формат ответа</label>
+          <select id="format" class="sb-select">
+            <option value="text">Текст</option>
+            <option value="jsonschema">JSON Schema</option>
+            <option value="jsonschema_structured">JSON Schema structured output</option>
+          </select>
+          <textarea id="schema" class="sb-textarea" rows="4"
+                    placeholder="Вставьте JSON Schema…" spellcheck="false"></textarea>
+          <div class="hint" id="formatHint"></div>
+        </div>
+      </div>
+
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Максимальное количество циклов</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="tok-row">
+            <input type="range" id="maxRounds" class="sb-range" min="1" max="10" step="1" value="6">
+            <span class="tok-val" id="maxRoundsVal">6</span>
+          </div>
+          <div class="hint">Сколько раундов модель может запрашивать инструменты (1–10); в одном раунде может быть несколько инструментов</div>
+        </div>
+      </div>
+
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Максимум токенов</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <label class="sb-label" for="tokens">Ответ модели</label>
+          <div class="tok-row">
+            <input type="range" id="tokens" class="sb-range" min="1" max="15000" step="1" value="1024">
+            <span class="tok-val" id="tokVal">1024</span>
+          </div>
+          <div class="hint">Ограничение объёма ответа от 1 до 15000</div>
+        </div>
+      </div>
+
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Допустимый таймаут ответа</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="tok-row">
+            <input type="range" id="timeout" class="sb-range" min="5" max="30" step="1" value="10">
+            <span class="tok-val" id="timeoutVal">10 с</span>
+          </div>
+          <div class="hint">Допустимый таймаут ответа от 5 до 30 секунд</div>
+        </div>
+      </div>
+
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Stop sequence</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <input type="text" id="stopSeq" class="sb-input" placeholder="Например: СТОП" style="width:100%; padding:9px 10px; border:1px solid #d8e2e6; border-radius:10px; background:#fff; font-size:13px; color:#143a44; font-family:inherit;">
+          <div class="hint">Останавливает генерацию, когда модель выдаст этот текст</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="body">
+    <header class="header">
+      <button class="hbtn" id="menu" title="Показать панель" aria-label="Показать панель">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18M3 12h18M3 18h18"/>
+        </svg>
+      </button>
+      <div class="avatar">AI</div>
+      <div class="titles">
+        <div class="name">AI Чат</div>
+        <div class="status" id="status">загрузка…</div>
+      </div>
+      <button class="hbtn pushright" id="delChat" title="Удалить диалог — очистить историю" aria-label="Удалить диалог">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6M10 11v6M14 11v6"/>
+        </svg>
+      </button>
+      <button class="hbtn" id="detailsToggle" title="Детали" aria-label="Детали">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+      </button>
+    </header>
+
+    <main class="log" id="log">
+      <div class="divider" id="todayDivider">Сегодня</div>
+    </main>
+
+    <div class="quickbar" id="quickbar">
+      <button type="button" class="quickchip" data-text="Хочу узнать время в Сиднее">Хочу узнать время в Сиднее</button>
+      <button type="button" class="quickchip" data-text="Брось кубик">Брось кубик</button>
+      <button type="button" class="quickchip" data-text="Кинь монетку">Кинь монетку</button>
+      <button type="button" class="quickchip" data-text="Время в Монако и кинь кости 2 раза">Время в Монако и кинь кости 2 раза</button>
+    </div>
+
+    <footer class="inputbar">
+      <div class="plus-wrap">
+        <button type="button" class="plus" id="attach" title="Вставить готовый текст" aria-label="Вставить готовый текст">+</button>
+        <div class="plus-menu" id="plusMenu" hidden>
+          <button type="button" class="plus-item" id="pasteWeather150">Текст 150 000 токенов</button>
+          <button type="button" class="plus-item" id="pasteWeather300">Текст 300 000 токенов</button>
+        </div>
+      </div>
+      <input id="input" type="text" placeholder="Сообщение…" autocomplete="off" autofocus>
+      <button class="send" id="send" title="Отправить" aria-label="Отправить">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M3.4 20.4 22 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/>
+        </svg>
+      </button>
+    </footer>
+  </div>
+
+  <div class="resizer" id="resizer"></div>
+
+  <aside class="details" id="details">
+    <div class="dt-head">
+      <span>Детали</span>
+      <button class="sb-close" id="closeDetails" title="Свернуть" aria-label="Свернуть">×</button>
+    </div>
+    <div class="dt-scroll">
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Запрос</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body prebox">
+          <pre id="reqJson">—</pre>
+        </div>
+      </div>
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Шаги</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div id="stepsList" class="stepsList">—</div>
+        </div>
+      </div>
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Количество токенов</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="meta-row" style="margin-top:0"><span>Токены запроса</span><b id="promptMeta">—</b></div>
+          <div class="meta-row"><span>Токены ответа</span><b id="completionMeta">—</b></div>
+          <div class="meta-row"><span>Токены истории диалога<span class="info-i" data-tip="Токены изначального запроса (вся история + сообщение) плюс токены итогового ответа; промежуточные tool-обмены не считаются. Хранится в истории модели.">i</span></span><b id="historyMeta">—</b></div>
+          <div class="meta-row"><span>Время</span><b id="timeMeta">—</b></div>
+        </div>
+      </div>
+      <div class="collaps err" id="errorCollaps" style="display:none">
+        <button class="collaps-head" type="button">
+          <span>Ошибка</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body prebox errblock">
+          <pre id="errorJson">—</pre>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+  const app = document.getElementById('app');
+  const log = document.getElementById('log');
+  const input = document.getElementById('input');
+  const send = document.getElementById('send');
+  const delChatBtn = document.getElementById('delChat');
+  const statusEl = document.getElementById('status');
+  const todayDivider = document.getElementById('todayDivider');
+  const menuBtn = document.getElementById('menu');
+  const closeSidebar = document.getElementById('closeSidebar');
+  const contactsEl = document.getElementById('contacts');
+  const formatSel = document.getElementById('format');
+  const schemaField = document.getElementById('schema');
+  const formatHint = document.getElementById('formatHint');
+  const tokRange = document.getElementById('tokens');
+  const stopSeqEl = document.getElementById('stopSeq');
+  const tokVal = document.getElementById('tokVal');
+  const timeoutRange = document.getElementById('timeout');
+  const timeoutVal = document.getElementById('timeoutVal');
+  const maxRoundsRange = document.getElementById('maxRounds');
+  const maxRoundsVal = document.getElementById('maxRoundsVal');
+  const detailsToggle = document.getElementById('detailsToggle');
+  const closeDetails = document.getElementById('closeDetails');
+  const reqJsonEl = document.getElementById('reqJson');
+  const promptMetaEl = document.getElementById('promptMeta');
+  const completionMetaEl = document.getElementById('completionMeta');
+  const timeMetaEl = document.getElementById('timeMeta');
+  const historyMetaEl = document.getElementById('historyMeta');
+  const stepsListEl = document.getElementById('stepsList');
+  const errorCollaps = document.getElementById('errorCollaps');
+  const errorJsonEl = document.getElementById('errorJson');
+  const sidebarEl = document.getElementById('sidebar');
+  const detailsEl = document.getElementById('details');
+  const resizer = document.getElementById('resizer');
+  const bodyEl = document.querySelector('.body');
+  const resetAllBtn = document.getElementById('resetSettings');
+
+  const FORMAT_META = {
+    text: { label: 'Текст', desc: 'Ответ обычным текстом' },
+    jsonschema: { label: 'JSON Schema', desc: 'Ответ по заданной JSON Schema' },
+    jsonschema_structured: { label: 'JSON Schema structured output', desc: 'Ответ по JSON Schema со strict-режимом' },
+  };
+  const clampTok = (v) => Math.min(15000, Math.max(1, Math.trunc(Number(v) || 1)));
+  const clampTimeout = (v) => Math.min(30, Math.max(5, Math.trunc(Number(v) || 10)));
+  const clampRounds = (v) => Math.min(10, Math.max(1, Math.trunc(Number(v) || 6)));
+
+  const scrollDown = () => { log.scrollTop = log.scrollHeight; };
+  const RE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M19 12H6"/><path d="M11 6l-6 6 6 6"/></svg>';
+
+  function escapeHtml(s) {
+    const m = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(s).replace(/[&<>"']/g, c => m[c]);
+  }
+
+  function inlineMd(src) {
+    const codes = [];
+    let s = src.replace(/`([^`]+)`/g, (_, c) => {
+      codes.push(c);
+      return '\u0000C' + (codes.length - 1) + '\u0000';
+    });
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    s = s.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+    s = s.replace(/\u0000C(\d+)\u0000/g, (_, i) => '<code>' + codes[+i] + '</code>');
+    s = s.replace(/\n/g, '<br>');
+    return s;
+  }
+
+  function renderBlocks(text) {
+    const lines = escapeHtml(text).split('\n');
+    let html = '', i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (line.trim() === '') { i++; continue; }
+      const h = line.match(/^(#{1,6})\s+(.*)$/);
+      if (h) {
+        const lvl = h[1].length;
+        html += '<h' + lvl + '>' + inlineMd(h[2]) + '</h' + lvl + '>\n';
+        i++; continue;
+      }
+      if (/^[-*+]\s+/.test(line)) {
+        let items = '';
+        while (i < lines.length && /^[-*+]\s+/.test(lines[i])) {
+          items += '<li>' + inlineMd(lines[i].replace(/^[-*+]\s+/, '')) + '</li>';
+          i++;
+        }
+        html += '<ul>' + items + '</ul>\n'; continue;
+      }
+      if (/^\d+\.\s+/.test(line)) {
+        let items = '';
+        while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
+          items += '<li>' + inlineMd(lines[i].replace(/^\d+\.\s+/, '')) + '</li>';
+          i++;
+        }
+        html += '<ol>' + items + '</ol>\n'; continue;
+      }
+      let para = [];
+      while (i < lines.length && lines[i].trim() !== '') { para.push(lines[i]); i++; }
+      html += '<p>' + inlineMd(para.join('\n')) + '</p>\n';
+    }
+    return html;
+  }
+
+  function renderMarkdown(src) {
+    if (!src) return '';
+    const fence = /```(\w*)\n?([\s\S]*?)```/g;
+    let out = '', last = 0, m;
+    while ((m = fence.exec(src)) !== null) {
+      if (m.index > last) out += renderBlocks(src.slice(last, m.index));
+      out += '<pre><code>' + escapeHtml(m[2].replace(/\n$/, '')) + '</code></pre>';
+      last = fence.lastIndex;
+    }
+    if (last < src.length) out += renderBlocks(src.slice(last));
+    return out;
+  }
+
+  let curDayKey = null;
+
+  function fmtTime(d) {
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function dayKey(d) {
+    return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+  }
+  function dayLabel(d) {
+    const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    if (dayKey(d) === dayKey(today)) return 'Сегодня';
+    if (dayKey(d) === dayKey(yesterday)) return 'Вчера';
+    return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear();
+  }
+  function timeSpan(at) {
+    const s = document.createElement('span');
+    s.className = 'mtime';
+    s.textContent = at ? fmtTime(at) : fmtTime(new Date());
+    return s;
+  }
+  function addDivider(label) {
+    const d = document.createElement('div');
+    d.className = 'divider';
+    d.textContent = label;
+    log.appendChild(d);
+  }
+
+  function addRow(role, text, opts) {
+    opts = opts || {};
+    const row = document.createElement('div');
+    row.className = 'row ' + role;
+    if (opts.dim) row.classList.add('old');
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    if (role === 'user') {
+      bubble.classList.add('md');
+      bubble.innerHTML = renderMarkdown(text);
+    } else {
+      bubble.textContent = text;
+    }
+    if (role === 'user') {
+      if (opts.at) row.appendChild(timeSpan(opts.at));
+      const resend = document.createElement('button');
+      resend.type = 'button';
+      resend.className = 'resend';
+      resend.title = 'Отправить повторно';
+      resend.setAttribute('aria-label', 'Отправить повторно');
+      resend.disabled = send.disabled;
+      resend.innerHTML = RE_SVG;
+      resend.addEventListener('click', () => sendWithText(text));
+      row.appendChild(resend);
+      const dot = document.createElement('div');
+      dot.className = 'dot';
+      row.appendChild(dot);
+    }
+    row.appendChild(bubble);
+    if (role === 'ai' && opts.at) row.appendChild(timeSpan(opts.at));
+    log.appendChild(row);
+    scrollDown();
+    return bubble;
+  }
+
+  function addError(text) {
+    const div = document.createElement('div');
+    div.className = 'errline';
+    div.textContent = 'Ошибка: ' + text;
+    log.appendChild(div);
+    scrollDown();
+  }
+
+  function setBusy(busy) {
+    send.disabled = busy;
+    document.querySelectorAll('.resend').forEach(b => { b.disabled = busy; });
+    document.querySelectorAll('.quickchip').forEach(b => { b.disabled = busy; });
+    statusEl.classList.toggle('typing', busy);
+    if (busy) {
+      statusEl.dataset.saved = statusEl.textContent;
+      statusEl.textContent = 'печатает…';
+    } else if (statusEl.dataset.saved !== undefined) {
+      statusEl.textContent = statusEl.dataset.saved;
+      delete statusEl.dataset.saved;
+    }
+  }
+
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text || send.disabled) return;
+    input.value = '';
+    await sendWithText(text);
+  }
+
+  async function sendWithText(text) {
+    if (!text || send.disabled) return;
+    const now = new Date();
+    const key = dayKey(now);
+    if (curDayKey !== null && key !== curDayKey) addDivider(dayLabel(now));
+    curDayKey = key;
+    addRow('user', text, { at: now });
+    setBusy(true);
+
+    const bubble = addRow('ai', '');
+    const bodyObj = {
+      message: text,
+      format: formatSel.value,
+      maxTokens: clampTok(tokRange.value),
+      timeout: clampTimeout(timeoutRange.value),
+      maxRounds: clampRounds(maxRoundsRange.value),
+    };
+    if (formatSel.value !== 'text') bodyObj.schema = schemaField.value.trim();
+    if (stopSeqEl.value.trim() !== '') bodyObj.stop = stopSeqEl.value.trim();
+    let errored = false;
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyObj),
+      });
+      if (!resp.ok) {
+        const errText = (await resp.text()).trim();
+        throw new Error(errText || ('HTTP ' + resp.status));
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      const isText = bodyObj.format === 'text';
+      let raw = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        raw += decoder.decode(value, { stream: true });
+        if (isText) {
+          bubble.classList.add('md');
+          bubble.innerHTML = renderMarkdown(raw);
+        } else {
+          bubble.textContent = raw;
+        }
+        scrollDown();
+      }
+      // Для форматов JSON Schema показываем JSON-ответ деревом, как в панели «Детали»
+      if (bodyObj.format !== 'text' && bubble.textContent.trim()) {
+        try {
+          JSON.parse(bubble.textContent);
+          renderJsonTree(bubble, bubble.textContent);
+          scrollDown();
+        } catch (e) { /* ответ не является JSON — оставляем текстом */ }
+      }
+      if (!bubble.textContent) bubble.remove();
+    } catch (err) {
+      errored = true;
+      bubble.remove();
+      addError(err.message || err);
+    } finally {
+      if (bubble.parentNode) {
+        bubble.after(timeSpan(new Date()));
+        scrollDown();
+      }
+      setBusy(false);
+      const detail = await refreshDetails();
+      // Не дублировать ошибку: если чат уже показал ошибку (например, таймаут),
+      // краткое описание из панели «Детали» повторно не добавляем.
+      if (detail && detail.summary && !errored) addError(detail.summary);
+      input.focus();
+    }
+  }
+
+  async function deleteDialog() {
+    if (send.disabled) return;
+    try {
+      await fetch('/api/reset', { method: 'POST' });
+    } catch (err) {
+      addError(err.message || err);
+      return;
+    }
+    log.innerHTML = '';
+    log.appendChild(todayDivider);
+    curDayKey = null;
+    clearDetails();
+  }
+
+  // Панели: свернуть/показать
+  function setSidebar(open) {
+    app.classList.toggle('collapsed', !open);
+    menuBtn.classList.toggle('active', open);
+    applySplit();
+  }
+  function setDetails(open) {
+    app.classList.toggle('collapsed-details', !open);
+    detailsToggle.classList.toggle('active', open);
+    if (open) applySplit();
+    else bodyEl.style.flex = '';
+  }
+  menuBtn.addEventListener('click', () => setSidebar(app.classList.contains('collapsed')));
+  closeSidebar.addEventListener('click', () => setSidebar(false));
+  detailsToggle.addEventListener('click', () => setDetails(app.classList.contains('collapsed-details')));
+  closeDetails.addEventListener('click', () => setDetails(false));
+
+  // Граница между чатом и «Деталями»: по умолчанию 60% чат / 40% детали,
+  // можно перетаскивать по горизонтали.
+  let splitFrac = 0.6;
+  function applySplit() {
+    const total = app.clientWidth;
+    const sidebarW = sidebarEl.offsetWidth;
+    const resizerW = resizer.offsetWidth;
+    const avail = total - sidebarW - resizerW;
+    if (avail <= 0) return;
+    let bodyPx = Math.round(avail * splitFrac);
+    bodyPx = Math.max(240, Math.min(avail - 300, bodyPx));
+    bodyEl.style.flex = '0 0 ' + bodyPx + 'px';
+    detailsEl.style.flex = '0 0 ' + (avail - bodyPx) + 'px';
+  }
+  let dragSplit = false;
+  resizer.addEventListener('mousedown', (e) => {
+    dragSplit = true;
+    resizer.classList.add('dragging');
+    document.body.classList.add('resizing');
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragSplit) return;
+    const total = app.clientWidth;
+    const sidebarW = sidebarEl.offsetWidth;
+    const resizerW = resizer.offsetWidth;
+    const avail = total - sidebarW - resizerW;
+    if (avail <= 0) return;
+    const rect = app.getBoundingClientRect();
+    let bodyPx = e.clientX - rect.left - sidebarW - resizerW;
+    bodyPx = Math.max(240, Math.min(avail - 300, bodyPx));
+    splitFrac = bodyPx / avail;
+    bodyEl.style.flex = '0 0 ' + bodyPx + 'px';
+    detailsEl.style.flex = '0 0 ' + (avail - bodyPx) + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    dragSplit = false;
+    resizer.classList.remove('dragging');
+    document.body.classList.remove('resizing');
+  });
+  window.addEventListener('resize', applySplit);
+  applySplit();
+
+  // Сворачивание блоков
+  document.querySelectorAll('.collaps-head').forEach(h => {
+    h.addEventListener('click', () => {
+      const box = h.closest('.collaps');
+      if (box) box.classList.toggle('closed');
+    });
+  });
+
+  function highlightContacts(current) {
+    for (const el of contactsEl.children) {
+      el.classList.toggle('active', el.dataset.model === current);
+    }
+  }
+
+  function renderContacts(models, current, reserveCfg) {
+    contactsEl.innerHTML = '';
+    for (const m of models) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'contact';
+      btn.dataset.model = m;
+      const av = document.createElement('span');
+      av.className = 'cavatar';
+      av.textContent = m.slice(0, 1).toUpperCase();
+      const nm = document.createElement('span');
+      nm.className = 'cname';
+      nm.textContent = m;
+      btn.appendChild(av);
+      btn.appendChild(nm);
+      btn.addEventListener('click', () => selectModel(m));
+      contactsEl.appendChild(btn);
+    }
+    // Резервная модель ([reserve]): внешний провайдер, не связанный с GPUStack.
+    // reserveCfg = {model, ready} от /api/models; работает как обычная модель —
+    // по клику переключает, при активации подсвечивается; когда провайдер не
+    // настроен — затемнена. Отображается ВНИЗУ списка.
+    if (reserveCfg && reserveCfg.model) {
+      const reserveId = reserveCfg.model;
+      const rBtn = document.createElement('button');
+      rBtn.type = 'button';
+      rBtn.className = 'contact reserve' + (reserveCfg.ready ? '' : ' off');
+      rBtn.dataset.model = reserveId;
+      rBtn.title = reserveCfg.ready
+        ? 'Переключиться на резервную модель ' + reserveId + ' (внешний провайдер)'
+        : 'Резервный провайдер не настроен: задайте AI_RESERVE_BASE_URL и AI_RESERVE_API_KEY в .env';
+      const rAv = document.createElement('span');
+      rAv.className = 'cavatar';
+      rAv.textContent = 'R';
+      const rNm = document.createElement('span');
+      rNm.className = 'cname';
+      rNm.textContent = '[reserve] ' + reserveId;
+      rBtn.appendChild(rAv);
+      rBtn.appendChild(rNm);
+      rBtn.addEventListener('click', () => selectModel(reserveId));
+      contactsEl.appendChild(rBtn);
+    }
+    highlightContacts(current);
+  }
+
+  async function selectModel(model) {
+    if (send.disabled) return;
+    try {
+      const resp = await fetch('/api/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      if (!resp.ok) throw new Error((await resp.text()).trim() || ('HTTP ' + resp.status));
+    } catch (err) {
+      addError(err.message || err);
+      return;
+    }
+    statusEl.textContent = model;
+    highlightContacts(model);
+    document.title = 'AI Чат — ' + model;
+    // Подтянуть контекст нового агента (сервер уже загрузил его историю).
+    await loadHistory();
+    clearDetails();
+    // Итог токенов контекста нового агента — из его файла истории.
+    void refreshDetails(false);
+  }
+
+  function resetAll() {
+    // сбросить значения формы в панели «Настройки» на дефолтные.
+    // Чат-переписка, панель «Детали» и выбранная модель остаются без изменений.
+    formatSel.value = 'text';
+    schemaField.value = '';
+    syncFormat();
+    tokRange.value = tokRange.max;
+    tokVal.textContent = tokRange.max;
+    timeoutRange.value = 10;
+    timeoutVal.textContent = '10 с';
+    maxRoundsRange.value = 6;
+    maxRoundsVal.textContent = '6';
+    stopSeqEl.value = '';
+  }
+  resetAllBtn.addEventListener('click', resetAll);
+
+  function syncFormat() {
+    const meta = FORMAT_META[formatSel.value] || FORMAT_META.text;
+    const isSchema = formatSel.value !== 'text';
+    schemaField.style.display = isSchema ? '' : 'none';
+    formatHint.style.display = isSchema ? '' : 'none';
+    formatHint.textContent = meta.desc;
+  }
+  formatSel.addEventListener('change', syncFormat);
+  tokRange.addEventListener('input', () => { tokVal.textContent = clampTok(tokRange.value); });
+  timeoutRange.addEventListener('input', () => { timeoutVal.textContent = clampTimeout(timeoutRange.value) + ' с'; });
+  maxRoundsRange.addEventListener('input', () => { maxRoundsVal.textContent = clampRounds(maxRoundsRange.value); });
+
+  function keySpan(key) {
+    const s = document.createElement('span');
+    s.className = 'jkey';
+    s.textContent = JSON.stringify(key) + ': ';
+    return s;
+  }
+  function valueSpan(value) {
+    const s = document.createElement('span');
+    if (value === null) { s.className = 'jval null'; s.textContent = 'null'; }
+    else if (typeof value === 'string') { s.className = 'jval str'; s.textContent = JSON.stringify(value); }
+    else if (typeof value === 'number') { s.className = 'jval num'; s.textContent = String(value); }
+    else if (typeof value === 'boolean') { s.className = 'jval bool'; s.textContent = String(value); }
+    else { s.className = 'jval'; s.textContent = String(value); }
+    return s;
+  }
+  function jsonNode(key, value) {
+    // primitive → одна строка без сворачивания
+    if (value === null || typeof value !== 'object') {
+      const line = document.createElement('div');
+      line.className = 'jline';
+      const sp = document.createElement('span');
+      sp.className = 'jtoggle-empty';
+      line.appendChild(sp);
+      if (key !== null) line.appendChild(keySpan(key));
+      line.appendChild(valueSpan(value));
+      return line;
+    }
+    const isArr = Array.isArray(value);
+    const entries = isArr ? value : Object.entries(value);
+    if (entries.length === 0) {
+      const line = document.createElement('div');
+      line.className = 'jline';
+      const sp = document.createElement('span');
+      sp.className = 'jtoggle-empty';
+      line.appendChild(sp);
+      if (key !== null) line.appendChild(keySpan(key));
+      const b = document.createElement('span');
+      b.className = 'jbracket';
+      b.textContent = isArr ? '[]' : '{}';
+      line.appendChild(b);
+      return line;
+    }
+    const node = document.createElement('div');
+    node.className = 'jnode';
+    // заголовок узла с шевроном-переключателем
+    const head = document.createElement('div');
+    head.className = 'jline';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'jtoggle';
+    btn.textContent = '▾';
+    btn.setAttribute('aria-label', 'Свернуть/развернуть');
+    btn.title = 'Свернуть/развернуть';
+    head.appendChild(btn);
+    if (key !== null) head.appendChild(keySpan(key));
+    const bOpen = document.createElement('span');
+    bOpen.className = 'jbracket';
+    bOpen.textContent = isArr ? '[' : '{';
+    head.appendChild(bOpen);
+    const dots = document.createElement('span');
+    dots.className = 'jdots';
+    dots.textContent = '…';
+    head.appendChild(dots);
+    node.appendChild(head);
+    // дочерние узлы
+    const body = document.createElement('div');
+    body.className = 'jbody';
+    if (isArr) {
+      for (const v2 of value) body.appendChild(jsonNode(null, v2));
+    } else {
+      for (const [k2, v2] of entries) body.appendChild(jsonNode(k2, v2));
+    }
+    node.appendChild(body);
+    // закрывающая скобка
+    const foot = document.createElement('div');
+    foot.className = 'jfoot';
+    const bClose = document.createElement('span');
+    bClose.className = 'jbracket';
+    bClose.textContent = isArr ? ']' : '}';
+    foot.appendChild(bClose);
+    node.appendChild(foot);
+    btn.addEventListener('click', () => {
+      const closed = node.classList.toggle('closed');
+      btn.textContent = closed ? '▸' : '▾';
+    });
+    return node;
+  }
+  function renderJsonTree(containerEl, raw) {
+    containerEl.innerHTML = '';
+    if (!raw) { containerEl.textContent = '—'; return; }
+    let value;
+    try { value = JSON.parse(raw); }
+    catch (e) { containerEl.textContent = raw; return; }
+    const root = document.createElement('div');
+    root.className = 'json-root';
+    root.appendChild(jsonNode(null, value));
+    containerEl.appendChild(root);
+  }
+  function clearDetails() {
+    reqJsonEl.textContent = '—';
+    errorJsonEl.textContent = '—';
+    errorCollaps.style.display = 'none';
+    stepsListEl.textContent = '—';
+    promptMetaEl.textContent = '—';
+    completionMetaEl.textContent = '—';
+    timeMetaEl.textContent = '—';
+    historyMetaEl.textContent = '—';
+  }
+
+  // Render the interaction steps into the "Шаги" block and the aggregated
+  // token / duration figures below it.
+  function renderSteps(steps) {
+    stepsListEl.innerHTML = '';
+    const arr = Array.isArray(steps) ? steps : [];
+    if (arr.length === 0) { stepsListEl.textContent = '—'; return; }
+    arr.forEach((st, i) => {
+      const block = document.createElement('div');
+      block.className = 'stepblock';
+      const head = document.createElement('div');
+      head.className = 'stephead';
+      head.textContent = 'Шаг ' + (i + 1);
+      block.appendChild(head);
+      if (st.tool) {
+        const body = document.createElement('div');
+        body.className = 'stepbody';
+        const fn = document.createElement('span');
+        fn.className = 'fn';
+        fn.textContent = st.tool;
+        body.appendChild(document.createTextNode('Инструмент: '));
+        body.appendChild(fn);
+        body.appendChild(document.createTextNode(' ' + formatArgs(st.args)));
+        block.appendChild(body);
+        if (st.result) {
+          const res = document.createElement('div');
+          res.className = 'stepresult';
+          res.textContent = 'Результат: ' + st.result;
+          block.appendChild(res);
+        }
+      } else {
+        const body = document.createElement('div');
+        body.className = 'stepbody';
+        body.textContent = st.text || '';
+        block.appendChild(body);
+      }
+      if (st.prompt_tokens || st.completion_tokens) {
+        const tok = document.createElement('div');
+        tok.className = 'steptokens';
+        tok.textContent = 'Токены: запрос ' + (st.prompt_tokens || 0) + ' · ответ ' + (st.completion_tokens || 0);
+        block.appendChild(tok);
+      }
+      stepsListEl.appendChild(block);
+    });
+  }
+
+  // formatArgs turns a JSON tool-arguments object into a compact
+  // key=value listing, e.g. region="Europe/Monaco".
+  function formatArgs(raw) {
+    if (!raw) return '';
+    let v;
+    try { v = JSON.parse(raw); } catch (e) { return raw; }
+    if (v === null || typeof v !== 'object') return raw;
+    return Object.entries(v).map(([k, val]) => k + '=' + JSON.stringify(val)).join(' ');
+  }
+
+  async function refreshDetails(showErr = true) {
+    try {
+      const d = await (await fetch('/api/debug')).json();
+      renderJsonTree(reqJsonEl, d.request);
+      renderSteps(d.steps);
+      if (d.prompt_tokens > 0) promptMetaEl.textContent = String(d.prompt_tokens);
+      else promptMetaEl.textContent = '—';
+      if (d.completion_tokens > 0) completionMetaEl.textContent = String(d.completion_tokens);
+      else completionMetaEl.textContent = '—';
+      if (d.time_ms != null) {
+        const ms = Math.max(0, Math.round(d.time_ms));
+        timeMetaEl.textContent = ms >= 1000 ? (ms / 1000).toFixed(1) + ' с' : ms + ' мс';
+      } else {
+        timeMetaEl.textContent = '—';
+      }
+      // Размер истории ведёт и хранит сервер (файл истории модели):
+      // подтягивается при старте, обновляется с каждым ответом и сбрасывается
+      // при удалении контекста.
+      if (d.history_tokens != null) {
+        historyMetaEl.textContent = String(d.history_tokens);
+      } else {
+        historyMetaEl.textContent = '—';
+      }
+      // Блок «Ошибка» показываем только после реальной ошибки в текущей
+      // сессии: при загрузке страницы/смене модели серверный detail —
+      // затёртый прошлым запуском — не должен выглядеть как свежая ошибка.
+      const detail = d.detail || null;
+      if (showErr) {
+        if (detail) {
+          renderJsonTree(errorJsonEl, JSON.stringify(detail));
+          errorCollaps.style.display = '';
+        } else {
+          errorCollaps.style.display = 'none';
+        }
+      }
+      return detail;
+    } catch (e) { /* сервер недоступен — не критично */ return undefined; }
+  }
+
+  // loadHistory fetches /api/history and renders every stored turn into the log
+  // (dimmed, grouped by day, with hh:MM timestamps). Reused on page load and
+  // after switching the active model, so each agent shows its own context.
+  async function loadHistory() {
+    const data = await (await fetch('/api/history')).json();
+    if (data.messages && data.messages.length) {
+      log.innerHTML = '';
+      let lastKey = null;
+      curDayKey = null;
+      for (const m of data.messages) {
+        const d = new Date(m.at);
+        const key = dayKey(d);
+        if (key !== lastKey) {
+          addDivider(dayLabel(d));
+          lastKey = key;
+          curDayKey = key;
+        }
+        const b = addRow(m.role === 'user' ? 'user' : 'ai', m.content, { at: d, dim: true });
+        // AI-ответ, представляющий собой валидный JSON-объект/массив, рисуем деревом
+        if (m.role === 'assistant') {
+          const c = m.content.trimStart();
+          let isJson = false;
+          if (c[0] === '{' || c[0] === '[') {
+            try {
+              const v = JSON.parse(m.content);
+              if (v && typeof v === 'object') { renderJsonTree(b, m.content); isJson = true; }
+            } catch (e) { /* не JSON — оставляем текстом */ }
+          }
+          if (!isJson) {
+            b.classList.add('md');
+            b.innerHTML = renderMarkdown(m.content);
+          }
+        }
+      }
+    } else {
+      log.innerHTML = '';
+      log.appendChild(todayDivider);
+      curDayKey = null;
+    }
+    return data;
+  }
+
+  (async function init() {
+    try {
+      const info = await (await fetch('/api/info')).json();
+      document.title = 'AI Чат — ' + info.model;
+      statusEl.textContent = info.model;
+      // при открытии/обновлении ограничение токенов — по максимуму
+      tokRange.value = tokRange.max;
+      tokVal.textContent = tokRange.max;
+      const data = await loadHistory();
+      // (history rendered by loadHistory; data.message count not needed here)
+      void data;
+      try {
+        const mi = await (await fetch('/api/models')).json();
+        renderContacts(mi.models, mi.current, { model: mi.reserve, ready: mi.reserve_ready });
+      } catch (e) { /* меню недоступно — не критично */ }
+      syncFormat();
+      clearDetails();
+      // Подтянуть сохранённый итог токенов контекста из файла истории.
+      void refreshDetails(false);
+      menuBtn.classList.add('active');
+      detailsToggle.classList.add('active');
+    } catch (err) {
+      statusEl.textContent = 'нет связи с сервером';
+    }
+  })();
+
+  send.addEventListener('click', sendMessage);
+  delChatBtn.addEventListener('click', deleteDialog);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) sendMessage();
+  });
+
+  // Быстрые сообщения: по клику отправляются как обычный ввод.
+  document.querySelectorAll('.quickchip').forEach(c => {
+    c.addEventListener('click', () => sendWithText(c.dataset.text));
+  });
+
+  // Кнопка "+" у поля ввода: всплывающее меню с готовыми текстами.
+  const attachBtn = document.getElementById('attach');
+  const plusMenu = document.getElementById('plusMenu');
+
+  const closePlusMenu = () => { plusMenu.hidden = true; };
+  attachBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    plusMenu.hidden = !plusMenu.hidden;
+  });
+  document.addEventListener('click', (e) => {
+    if (plusMenu.hidden || plusMenu.contains(e.target)) return;
+    closePlusMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePlusMenu();
+  });
+
+  // pasteWeather -> {el, url} pairs; one loader for all menu items.
+  const plusItems = [
+    { el: document.getElementById('pasteWeather150'), url: '/api/sample?tokens=150' },
+    { el: document.getElementById('pasteWeather300'), url: '/api/sample?tokens=300' },
+  ];
+  plusItems.forEach(({ el, url }) => {
+    el.addEventListener('click', async () => {
+      closePlusMenu();
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        input.value = await resp.text();
+        input.focus();
+      } catch (err) {
+        statusEl.textContent = 'Ошибка загрузки текста: ' + err.message;
+      }
+    });
+  });
+</script>
+</body>
+</html>
