@@ -1,0 +1,3690 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Чат</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #d9dcdd;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+
+  /* Приложение занимает всё окно браузера */
+  .app {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    background: #4fa6b5;
+  }
+
+  /* Боковая панель «Настройки» (ширина тянется за правую границу) */
+  .sidebar {
+    flex: 0 0 var(--sb-w, 280px);
+    min-width: 200px;
+    max-width: 60vw;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border-right: 1px solid #d8e2e6;
+    z-index: 5;
+  }
+  .app.collapsed .sidebar { display: none; }
+  /* Ручка сдвигаемой границы */
+  .sb-resizer {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 6;
+    touch-action: none;
+  }
+  .sb-resizer:hover, .sb-resizer.dragging { background: rgba(11, 114, 133, .18); }
+
+  /* Правая панель «Детали» */
+  .details {
+    flex: 40 1 0;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border-left: 1px solid #d8e2e6;
+    z-index: 5;
+  }
+  .app.collapsed-details .details { display: none; }
+  .app.collapsed-details .resizer { display: none; }
+
+  /* Перетаскиваемая граница между чатом и «Деталями» */
+  .resizer {
+    flex: 0 0 8px;
+    cursor: col-resize;
+    position: relative;
+    z-index: 6;
+    background: transparent;
+  }
+  .resizer::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    background: #b9dbe2;
+    transition: background .15s, width .15s, margin-left .15s;
+  }
+  .resizer:hover::after, .resizer.dragging::after {
+    background: #2e7f8f;
+    width: 4px;
+    margin-left: -2px;
+  }
+  .resizer:hover { background: rgba(46, 127, 143, .05); }
+  body.resizing { cursor: col-resize; user-select: none; }
+
+  .sb-head, .dt-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 14px 12px;
+    color: #2e7f8f;
+    font-size: 15px;
+    font-weight: 700;
+    border-bottom: 1px solid #e3ecef;
+  }
+  .sb-close {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    background: transparent;
+    color: #2e7f8f;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+  .sb-close:hover { background: #dff0f4; }
+  .sb-scroll { flex: 1; overflow-y: auto; padding: 8px 10px 16px; }
+  .reset-all {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    margin: 0 0 8px;
+    border: 1px solid #2e7f8f;
+    border-radius: 12px;
+    background: #eef7f9;
+    color: #2e7f8f;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .reset-all:hover { background: #dff0f4; }
+  .reset-all:active { background: #cfe9ee; transform: translateY(1px); }
+  .reset-all svg { display: block; }
+  .dt-scroll { flex: 1; overflow-y: auto; padding: 8px 12px 16px; }
+
+  /* Сворачиваемые блоки */
+  .collaps {
+    border: 1px solid #e3ecef;
+    border-radius: 12px;
+    margin: 10px 0;
+    background: #fff;
+    overflow: hidden;
+  }
+  .collaps-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 0;
+    background: #f4f8f9;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: #2e7f8f;
+    text-align: left;
+  }
+  .collaps-head:hover { background: #eef4f6; }
+  .collaps-head .chev { transition: transform .15s; font-size: 12px; color: #7fa8b3; }
+  .collaps.closed .chev { transform: rotate(-90deg); }
+  .collaps-body { padding: 8px 12px 12px; }
+  .collaps.closed .collaps-body { display: none; }
+  .collaps-body.prebox { padding: 0; }
+  .collaps-body pre {
+    margin: 0;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #143a44;
+    background: #fbfcfc;
+    height: 220px;
+    min-height: 60px;
+    max-height: 70vh;
+    overflow: auto;
+    resize: vertical;
+  }
+  .collaps.err {
+    background: #fbe3e3;
+    border: 1px solid #e04444;
+  }
+  .collaps.err .collaps-head {
+    background: #fbe3e3;
+    color: #a00000;
+  }
+  .collaps.err .collaps-head:hover { background: #f7d2d2; }
+  .collaps.err .collaps-head .chev { color: #a00000; }
+  .collaps.err .collaps-body {
+    background: #fbe3e3;
+  }
+  .collaps.err pre {
+    color: #a00000;
+    background: transparent;
+  }
+  .sb-label {
+    display: block;
+    color: #5a8790;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    margin: 0 4px 6px;
+  }
+  .contacts { display: block; }
+  .contact {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 10px;
+    margin: 2px 0;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: #143a44;
+  }
+  .contact:hover { background: #dff0f4; }
+  .contact .cavatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #2e7f8f;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex: none;
+  }
+  .contact .cname { min-width: 0; font-size: 13px; word-break: break-all; }
+  .contact.active { background: #e4f4f8; box-shadow: inset 0 0 0 2px #2e7f8f; }
+  .contact.active .cname { font-weight: 700; color: #2e7f8f; }
+
+  /* Резервная модель [reserve]: выбираемая, как обычные модели */
+  .contact.reserve { cursor: pointer; border: 1px dashed #2e7f8f; background: #f2fafc; }
+  .contact.reserve:hover { background: #e4f4f8; }
+  .contact.reserve:active { background: #d5edf3; }
+  .contact.reserve .cavatar { background: #7fb6c2; }
+  .contact.reserve .cname { color: #2e7f8f; }
+  .contact.reserve.active { background: #e4f4f8; }
+  .contact.reserve.active .cname { font-weight: 700; }
+  .contact.reserve.off { opacity: .5; }
+
+  .sb-select, .sb-input {
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid #d8e2e6;
+    background: #f4f8f9;
+    font-size: 13px;
+    font-family: inherit;
+    color: #143a44;
+  }
+  .sb-select:focus, .sb-input:focus { outline: none; border-color: #2e7f8f; box-shadow: 0 0 0 2px rgba(46, 127, 143, .25); }
+  .sb-input { margin-top: 6px; background: #fff; }
+  .sb-range { flex: 1 1 auto; min-width: 0; width: auto; accent-color: #2e7f8f; }
+  .tok-row { display: flex; align-items: center; gap: 10px; }
+  .tok-val { color: #2e7f8f; font-weight: 700; white-space: nowrap; flex: none; }
+  .hint { color: #7fa8b3; font-size: 12px; margin: 5px 4px 0; line-height: 1.4; }
+  textarea { resize: vertical; font-family: inherit; }
+  .sb-textarea {
+    width: 100%;
+    min-height: 96px;
+    margin-top: 6px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid #d8e2e6;
+    background: #fff;
+    font-size: 13px;
+    color: #143a44;
+    resize: vertical;
+  }
+  .sb-textarea:focus { outline: none; border-color: #2e7f8f; box-shadow: 0 0 0 2px rgba(46, 127, 143, .25); }
+
+  /* Область чата */
+  .body {
+    flex: 60 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: #4fa6b5;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    background: #2e7f8f;
+  }
+  .hbtn {
+    width: 38px;
+    height: 38px;
+    border: 0;
+    background: transparent;
+    color: #dff0f4;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+  .hbtn:hover { background: rgba(255, 255, 255, .14); }
+  .hbtn:active { background: rgba(255, 255, 255, .24); }
+  .hbtn.active { background: rgba(255, 255, 255, .28); color: #fff; }
+  .hbtn svg { display: block; }
+  .pushright { margin-left: auto; }
+  .avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #dff0f4;
+    color: #2e7f8f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: .5px;
+    flex: none;
+  }
+  .titles { min-width: 0; }
+  .name { color: #fff; font-size: 15px; font-weight: 600; line-height: 1.2; }
+  .status {
+    color: #c9e6ec;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .status.typing { font-style: italic; }
+
+  .log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 14px 10px;
+    background: #4fa6b5;
+  }
+  .divider {
+    text-align: center;
+    color: #cfe9ee;
+    font-size: 12px;
+    margin: 4px 0 12px;
+  }
+  /* Плашка сжатого контекста: на месте свёрнутых сообщений стоит сводка;
+     без неё после сжатия выглядит, будто кусок диалога пропал. */
+  .foldhead {
+    display: inline-block;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    padding: 2px 0;
+    color: #1d5d6e;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .foldhead:hover { color: #0e7a94; text-decoration: underline; }
+  .foldbody {
+    margin: 4px 0 8px;
+    padding: 7px 11px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: #35565f;
+    background: #eef5f6;
+    border-left: 3px solid #b9d8de;
+    border-radius: 6px;
+    overflow-wrap: anywhere;
+  }
+  .row { display: flex; margin: 0 0 10px; }
+  .row.user { justify-content: flex-end; }
+  .row.old { opacity: 0.72; }
+  .mtime {
+    font-size: 11.5px;
+    color: #ffffff;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(15, 58, 68, 0.55);
+    align-self: flex-end;
+    margin: 0 6px 5px;
+    flex: none;
+    white-space: nowrap;
+  }
+  .bubble {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 20px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: #143a44;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .row.ai .bubble { background: #dff0f4; }
+  .row.user .bubble { background: #fff; }
+  .bubble.thinking {
+    color: #7fa8b3;
+    font-style: italic;
+    animation: think-pulse 1.6s ease-in-out infinite;
+  }
+  .bubble.empty-answer {
+    color: #8aa6ae;
+    font-style: italic;
+  }
+  /* Отказ по инварианту: бейдж в пузыре ответа */
+  .bubble.inv-refused {
+    border: 1px solid #e0b4b4;
+    background: #fdf3f3;
+  }
+  .bubble.inv-refused .inv-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #a00000;
+    background: #fff;
+    border: 1px solid #e0b4b4;
+    border-radius: 8px;
+    padding: 1px 8px;
+    margin-top: 8px;
+  }
+  /* Панель «Инварианты» в «Деталях» */
+  .inv-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 6px;
+    border: 1px solid #e2eaee;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 12.5px;
+    color: #143a44;
+  }
+  .inv-row.off .inv-text { text-decoration: line-through; color: #9db4bc; }
+  .inv-text { flex: 1; overflow-wrap: anywhere; }
+  .inv-del { flex: none; border: none; background: none; color: #a00000; cursor: pointer; font-size: 14px; padding: 0 4px; }
+  .inv-edit { flex: none; border: none; background: none; color: #0b7285; cursor: pointer; font-size: 12px; padding: 0 4px; }
+  .inv-log-row {
+    font-size: 11.5px;
+    color: #5b7a84;
+    padding: 3px 6px;
+    border-bottom: 1px dashed #e2eaee;
+    overflow-wrap: anywhere;
+  }
+  @keyframes think-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+  :is(.bubble.md, .compress-md) { white-space: normal; }
+  :is(.bubble.md, .compress-md) p { margin: 0 0 7px; }
+  :is(.bubble.md, .compress-md) p:last-child { margin-bottom: 0; }
+  :is(.bubble.md, .compress-md) h1, :is(.bubble.md, .compress-md) h2, :is(.bubble.md, .compress-md) h3,
+  :is(.bubble.md, .compress-md) h4, :is(.bubble.md, .compress-md) h5, :is(.bubble.md, .compress-md) h6 { margin: 9px 0 4px; font-weight: 600; line-height: 1.3; }
+  :is(.bubble.md, .compress-md) h1 { font-size: 17px; }
+  :is(.bubble.md, .compress-md) h2 { font-size: 16px; }
+  :is(.bubble.md, .compress-md) h3 { font-size: 15px; }
+  :is(.bubble.md, .compress-md) h4, :is(.bubble.md, .compress-md) h5, :is(.bubble.md, .compress-md) h6 { font-size: 14px; }
+  :is(.bubble.md, .compress-md) ul, :is(.bubble.md, .compress-md) ol { margin: 4px 0 7px; padding-left: 22px; }
+  :is(.bubble.md, .compress-md) li { margin: 2px 0; }
+  :is(.bubble.md, .compress-md) code {
+    background: rgba(20,58,68,.09);
+    padding: 1px 5px; border-radius: 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+  }
+  :is(.bubble.md, .compress-md) pre {
+    background: rgba(20,58,68,.09);
+    padding: 8px 10px; border-radius: 8px;
+    overflow-x: auto; margin: 7px 0;
+  }
+  :is(.bubble.md, .compress-md) pre code { background: none; padding: 0; font-size: 13px; }
+  :is(.bubble.md, .compress-md) a { color: #0b7285; text-decoration: underline; }
+  :is(.bubble.md, .compress-md) strong { font-weight: 600; }
+  :is(.bubble.md, .compress-md) em { font-style: italic; }
+  :is(.bubble.md, .compress-md) del { text-decoration: line-through; }
+  :is(.bubble.md, .compress-md) blockquote {
+    margin: 7px 0; padding-left: 10px; border-left: 3px solid #b8d6de; color: #40616b;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #bfe0e8;
+    align-self: flex-end;
+    margin: 0 2px 5px 6px;
+    flex: none;
+  }
+  .resend {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    background: rgba(255, 255, 255, .18);
+    color: #fff;
+    cursor: pointer;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 5px 6px 0;
+    align-self: flex-end;
+    opacity: 1;
+  }
+  .resend:hover { background: #dff0f4; color: #2e7f8f; }
+  .resend:disabled { opacity: .35; cursor: default; }
+  .resend svg { display: block; }
+  .row { position: relative; }
+  /* Переключатель ветвей ⟨ 1/2 ⟩ под сообщением: виден, когда у сообщения
+     есть альтернативные продолжения (см. /api/history → alts). */
+  .altbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: -2px 0 8px 2px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(11, 74, 88, .55);
+    border-radius: 999px;
+    padding: 3px 12px 3px 6px;
+    width: max-content;
+    max-width: 100%;
+    user-select: none;
+  }
+  /* Переключатель стоит под сообщением, от которого ответвилась ветка:
+     под пузырём пользователя — справа, под ответом модели — слева. */
+  .altbar-user { margin-left: auto; margin-right: 8px; }
+  .altbar-ai { margin-right: auto; }
+  .altbar button {
+    border: 0;
+    background: rgba(255, 255, 255, .18);
+    color: #fff;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .altbar button:hover { background: #dff0f4; color: #2e7f8f; }
+  .altbar button:disabled { opacity: .35; cursor: default; }
+  .altbar .altcount { min-width: 28px; text-align: center; }
+  .errline {
+    text-align: center;
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 12px;
+    margin: 2px 0 10px;
+    text-shadow: 0 0 5px rgba(255, 23, 23, .95), 0 0 10px rgba(255, 23, 23, .75);
+  }
+  .infoline {
+    text-align: center;
+    color: #e8f6fa;
+    font-size: 12px;
+    margin: 2px 0 10px;
+    text-shadow: 0 1px 3px rgba(15, 58, 68, .6);
+  }
+  .infoline b { font-weight: 600; }
+
+  .inputbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: #fff;
+  }
+  .plus-wrap { position: relative; flex: none; }
+  .drop-wrap { position: relative; }
+  .hbtn { position: relative; }
+  .plus {
+    width: 34px;
+    height: 42px;
+    border: 1px solid #cfe4ea;
+    border-radius: 10px;
+    background: #eef7f9;
+    color: #2e7f8f;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .plus:hover { background: #d8eef2; border-color: #2e7f8f; }
+  .plus-menu {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    min-width: 210px;
+    background: #fff;
+    border: 1px solid #cfe4ea;
+    border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+    padding: 4px;
+    z-index: 40;
+  }
+  .plus-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: #143a44;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .plus-item:hover { background: #d8eef2; }
+  /* Подпись-пояснение под пунктом меню (контекстное меню удаления) */
+  .plus-hint {
+    display: block;
+    font-size: 11px;
+    color: #6b8f99;
+    margin-top: 2px;
+  }
+  /* Меню под кнопкой в шапке (кнопка удаления диалога): раскрывается вниз */
+  .plus-menu.below {
+    top: calc(100% + 8px);
+    bottom: auto;
+    left: auto;
+    right: 0;
+  }
+  /* Меню «+» у поля ввода: готовые вопросы длинные — ограничиваем ширину,
+     текст переносится по словам (класс quiz-item). */
+  #plusMenu { max-width: 340px; }
+  .inputbar input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: #dff0f4;
+    border-radius: 22px;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-family: inherit;
+    color: #143a44;
+  }
+  .inputbar input::placeholder { color: #7fa8b3; }
+  .inputbar input:focus { box-shadow: 0 0 0 2px rgba(46, 127, 143, .35); }
+  .send {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 0;
+    background: #2e7f8f;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: none;
+  }
+  .send:hover { background: #287180; }
+  .send:disabled { background: #9cc4cd; cursor: default; }
+  .send svg { display: block; }
+
+  /* Быстрые сообщения над полем ввода */
+  .quickbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px 2px;
+    background: #fff;
+  }
+  .quickchip {
+    border: 1px solid #cfe4ea;
+    background: #eef7f9;
+    color: #2e7f8f;
+    border-radius: 16px;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .12s, border-color .12s;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .quickchip:hover { background: #d8eef2; border-color: #2e7f8f; }
+  .quickchip:disabled { opacity: .5; cursor: default; }
+
+  /* Чип состояния задачи (конечный автомат) над строкой ввода */
+  .taskchip {
+    border: 1px solid #cfe4ea;
+    background: #eef7f9;
+    color: #2e7f8f;
+    border-radius: 16px;
+    padding: 6px 12px;
+    /* Та же высота, что у блобов «Профили» (36px), чтобы чипы в quickbar
+       стояли в ровный ряд */
+    height: 36px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .12s, border-color .12s;
+    white-space: nowrap;
+  }
+  .taskchip:hover { background: #d8eef2; border-color: #2e7f8f; }
+  .taskchip b { font-weight: 600; }
+  /* Чип анкетирования нового пользователя (onboarding FSM) */
+  .onbchip {
+    border: 1px solid #f0d9c0;
+    background: #fdf3e7;
+    color: #b06a15;
+    border-radius: 16px;
+    padding: 6px 12px;
+    /* Та же высота, что у блобов «Профили» (36px) */
+    height: 36px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .12s, border-color .12s;
+    white-space: nowrap;
+  }
+  .onbchip:hover { background: #f8e7d0; border-color: #b06a15; }
+  /* Значок «i» с описанием анкеты в ховере (блок «Задачи») */
+  .onb-info-i {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    box-sizing: border-box;
+    border: 1px solid #7fa8b3;
+    border-radius: 50%;
+    color: #4b6a74;
+    font-size: 10.5px;
+    font-style: italic;
+    font-family: Georgia, serif;
+    line-height: 14px;
+    text-align: center;
+    cursor: help;
+    user-select: none;
+  }
+  .onb-info-i:hover { background: #eef4f6; border-color: #2e7f8f; color: #143a44; }
+  /* Состояние задачи в панели «Память» (рабочий слой) */
+  .task-state {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid #d8e2e6;
+    border-radius: 10px;
+    background: #f7fbfc;
+  }
+  .task-stepper { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+  .task-stepper button {
+    border: 1px solid #cfe4ea;
+    background: #fff;
+    color: #4b6a74;
+    border-radius: 12px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  /* Этапы в степпере — только индикация актуального статуса: кликать их
+     нельзя, этап меняет модель инструментом task_state */
+  .task-stage {
+    border: 1px solid #cfe4ea;
+    background: #fff;
+    color: #4b6a74;
+    border-radius: 12px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  .task-stage.current { background: #2e7f8f; border-color: #2e7f8f; color: #fff; }
+  /* Поля шага/ожидания — read-only дисплей */
+  .task-field[readonly] { background: #f7fbfc; color: #4b6a74; }
+  .task-field {
+    width: 100%;
+    box-sizing: border-box;
+    height: 32px;
+    margin-top: 6px;
+    padding: 0 10px;
+    border: 1px solid #d8e2e6;
+    border-radius: 10px;
+    background: #fff;
+    font-size: 12.5px;
+    color: #143a44;
+    font-family: inherit;
+  }
+  .task-plan { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; }
+  .task-plan-row { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; color: #143a44; }
+  .task-plan-row .mark { flex: none; width: 14px; text-align: center; }
+
+  /* Таблицы Markdown (GFM) в репликах модели и панелях */
+  table { border-collapse: collapse; margin: 6px 0; font-size: 12.5px; }
+  th, td { border: 1px solid #d8e2e6; padding: 4px 10px; text-align: left; }
+  th { background: #f7fbfc; color: #143a44; }
+
+  /* Вкладки чатов на верхней панели */
+  .tabbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: #2e7f8f;
+    overflow-x: auto;
+    flex: none;
+  }
+  .tabs { display: flex; gap: 6px; flex: 1; min-width: 0; }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    max-width: 190px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .12);
+    color: #dff0f4;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: background .12s;
+  }
+  .tab:hover { background: rgba(255, 255, 255, .2); }
+  .tab.active { background: #fff; color: #143a44; }
+  .tab .tab-title { overflow: hidden; text-overflow: ellipsis; }
+  .tab .tab-close {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 15px;
+    line-height: 1;
+    opacity: .65;
+    flex: none;
+  }
+  .tab .tab-close:hover { opacity: 1; }
+  .tab-new {
+    border: 0;
+    background: transparent;
+    color: #dff0f4;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    flex: none;
+  }
+  .tab-new:hover { background: rgba(255, 255, 255, .14); }
+
+  /* Блобы-профили пользователей в быстрых сообщениях (одинакового размера,
+     приглушённые цвета в общей бирюзовой гамме приложения); фиксированная
+     высота — естественная высота строки зависит от глифов (хвостики,
+     «м»), поэтому выравниваем явно */
+  .profilechip {
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    height: 36px;
+    width: 120px;
+    max-width: 100%;
+    border: 1px solid transparent;
+    border-radius: 16px;
+    padding: 6px 12px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    color: #fff;
+    cursor: pointer;
+    transition: filter .12s;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .profilechip:hover { filter: brightness(1.08); }
+  .profilechip:last-child { margin-bottom: 2px; }
+  .profilechip:disabled { opacity: .5; cursor: default; }
+  /* Единый блоб «Профили» с контекстным меню в quickbar */
+  .prof-wrap { position: relative; }
+  /* Кнопка «Профили» заметная: белому тексту нужна заливка (у блобов-профилей
+     она задавалась инлайн, у сводной кнопки своего цвета нет); текст — по
+     центру блоба */
+  #profBtn { background: #2e7f8f; justify-content: center; }
+
+  /* Пункты меню «+»: вопросы из тестового файла — длинные, переносятся */
+  .plus-item.quiz-item {
+    white-space: normal;
+    line-height: 1.35;
+  }
+
+  /* Пометка с ожидаемым ответом под ответом модели на вопрос викторины.
+     В модель не отправляется и в контексте не учитывается. Слева, под
+     пузырём ответа (отступ = ширина аватара). */
+  .quiz-note {
+    text-align: left;
+    margin: -4px 0 10px 42px;
+  }
+  .quiz-note span {
+    display: inline-block;
+    max-width: 70%;
+    background: #f0e9fb;
+    border: 1px dashed #d8c8f5;
+    color: #6d3fc0;
+    border-radius: 10px;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    text-align: left;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .quiz-note b { font-weight: 600; }
+  /* Результат сверки с ожидаемым ответом: зелёная плашка — верно,
+     красная — неверно. */
+  .quiz-note span.ok {
+    background: #e5f6e8;
+    border: 1px dashed #7ac142;
+    color: #1f7a2e;
+  }
+  .quiz-note span.bad {
+    background: #fdeaea;
+    border: 1px dashed #e04444;
+    color: #a00000;
+  }
+
+  /* Блок «Стратегия сжатия»: выключатель + радиокнопки стратегий */
+  .switch-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #2e7f8f;
+    cursor: pointer;
+    user-select: none;
+  }
+  /* Тоггл вкл/выкл: сам чекбокс скрыт, видна только пилюля с ползунком */
+  .switch-row input {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .switch-ui {
+    flex: none;
+    width: 36px;
+    height: 20px;
+    border-radius: 10px;
+    background: #c6d9de;
+    position: relative;
+    transition: background .15s;
+  }
+  .switch-ui::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(20, 58, 68, .35);
+    transition: transform .15s;
+  }
+  .switch-row input:checked + .switch-ui { background: #2e7f8f; }
+  .switch-row input:checked + .switch-ui::after { transform: translateX(16px); }
+  .switch-row input:focus-visible + .switch-ui {
+    outline: 2px solid #2e7f8f;
+    outline-offset: 2px;
+  }
+  .strategy-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 10px;
+  }
+  .strategy-list.off { display: none; }
+  .radio-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #143a44;
+    cursor: pointer;
+  }
+  .radio-row input { accent-color: #2e7f8f; cursor: pointer; }
+  .radio-row .rname { font-weight: 600; color: #2e7f8f; }
+
+  /* Вложенные шаги (инструменты внутри раунда, сжатие/проверка) */
+  .stepsub {
+    margin: 6px 0 0 14px;
+    border-left: 2px solid #d8e2e6;
+    padding-left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .stepsub .stepblock { background: #fff; }
+  .stepsub .stephead { color: #5a8790; }
+
+  /* Кнопка действия в панели «Детали» (например, «+» в блоке «Память») */
+  .cmp-analyze {
+    margin-top: 10px;
+    border: 1px solid #2e7f8f;
+    background: #eaf6f8;
+    color: #1f6372;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 12px;
+    border-radius: 9px;
+    cursor: pointer;
+  }
+  .cmp-analyze:hover:not(:disabled) { background: #dceff3; }
+  .cmp-analyze:disabled { opacity: 0.6; cursor: default; }
+
+  /* Подблоки слоёв памяти в панели «Детали» */
+  .mem-layer {
+    margin-bottom: 10px;
+    border: 1px solid #e2eaee;
+    border-radius: 10px;
+    background: #fbfdfe;
+    padding: 8px 10px;
+  }
+  .mem-layer-head {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1f6372;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .mem-layer-sub { font-weight: 400; color: #5b8794; font-size: 11.5px; white-space: nowrap; }
+  .mem-layer-head > span:first-child { flex: 1; min-width: 0; }
+  /* Выключенный слой: блок приглушён, данные остаются, модели не отправляются */
+  .mem-layer.off { opacity: 0.55; }
+  .mem-toggle {
+    position: relative;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .mem-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .mem-slider {
+    width: 30px;
+    height: 17px;
+    border-radius: 17px;
+    background: #c6d8de;
+    transition: background 0.15s;
+  }
+  .mem-slider::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s;
+  }
+  .mem-toggle input:checked + .mem-slider { background: #2fa8b5; }
+  .mem-toggle input:checked + .mem-slider::before { transform: translateX(13px); }
+  .mem-layer-body {
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: #143a44;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 120px;
+    overflow: auto;
+  }
+  .mem-group-head {
+    font-size: 11px;
+    font-weight: 600;
+    color: #5b8794;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+  .mem-empty { color: #b0c4ca; font-size: 12.5px; padding: 2px 0 4px; }
+  /* Сворачиваемые блоки типов памяти: клик по заголовку скрывает тело слоя
+     (тумблер слоя внутри заголовка клик не перехватывает) */
+  .mem-layer-head { cursor: pointer; }
+  .mem-layer-head .chev { flex: none; font-size: 12px; color: #7fa8b3; transition: transform .15s; }
+  .mem-layer.collapsed .mem-layer-head .chev { transform: rotate(-90deg); }
+  .mem-layer.collapsed .mem-layer-body,
+  .mem-layer.collapsed .mem-layer-extra { display: none; }
+  .mem-layer-extra { margin-top: 6px; }
+
+  /* Маркер сжатия контекста в чате не отображается (см. loadHistory). */
+
+  /* Блок «Сжатие» на панели «Детали» */
+  .compress-caption {
+    font-size: 12px;
+    font-weight: 600;
+    color: #7fa8b3;
+    margin: 8px 0 4px;
+  }
+  /* Сводка сжатия: рендерится как Markdown */
+  .compress-summary {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #143a44;
+    overflow-wrap: anywhere;
+  }
+
+  /* Интерактивное JSON-дерево на панели «Детали» */
+  .json-root {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #143a44;
+  }
+  .jline { white-space: pre-wrap; }
+  .jtoggle {
+    display: inline-block;
+    flex: none;
+    width: 16px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #7fa8b3;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: inherit;
+    text-align: left;
+  }
+  .jtoggle:hover { color: #2e7f8f; }
+  .jtoggle-empty { flex: none; width: 16px; }
+  .jkey { color: #2e7f8f; word-break: break-all; }
+  .jbracket { color: #7fa8b3; }
+  .jval { color: #143a44; }
+  .jval.str { color: #8a2be2; }
+  .jval.num { color: #b25000; }
+  .jval.bool { color: #a00000; }
+  .jval.null { color: #808080; font-style: italic; }
+  .jbody { padding-left: 14px; }
+  .jdots { display: none; color: #7fa8b3; }
+  .jnode.closed .jdots { display: inline; }
+  .jnode.closed .jbody { display: none; }
+  .jfoot { padding-left: 16px; color: #7fa8b3; }
+
+  /* Шаги взаимодействия в панели «Детали» */
+  .stepsList { display: flex; flex-direction: column; gap: 8px; }
+  .stepblock {
+    border: 1px solid #d8e2e6;
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #f7fbfc;
+  }
+  .stephead {
+    color: #2e7f8f;
+    font-weight: 700;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .stepbody { color: #143a44; font-size: 12.5px; line-height: 1.45; word-break: break-word; }
+  .stepbody .fn { font-weight: 600; }
+  .stepresult {
+    color: #4b6a74;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .steptokens {
+    color: #4b6a74;
+    margin-top: 4px;
+    font-size: 11.5px;
+  }
+  .info-i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-left: 5px;
+    border: 1px solid #7fa8b3;
+    border-radius: 50%;
+    color: #7fa8b3;
+    font-size: 10px;
+    font-style: italic;
+    font-weight: 700;
+    cursor: help;
+    flex: none;
+    vertical-align: -2px;
+    position: relative;
+  }
+  /* Тултипы «i» рисуются в одном общем слое на body (position: fixed,
+     см. JS ниже): панели и блоки со скроллом его не обрезают. */
+  .tipbox {
+    position: fixed;
+    background: #143a44;
+    color: #fff;
+    font-size: 11.5px;
+    line-height: 1.4;
+    padding: 7px 9px;
+    border-radius: 8px;
+    width: max-content;
+    max-width: 240px;
+    white-space: normal;
+    text-align: left;
+    z-index: 1000;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+  }
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #eef3f5;
+    color: #4b6a74;
+    font-size: 12.5px;
+  }
+  .meta-row b { color: #143a44; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-resizer" id="sbResizer" title="Потяните, чтобы изменить ширину панели"></div>
+    <div class="sb-head">
+      <span>Настройки</span>
+      <button class="sb-close" id="closeSidebar" title="Свернуть панель" aria-label="Свернуть панель">×</button>
+    </div>
+    <div class="sb-scroll">
+      <button type="button" class="reset-all" id="resetSettings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+        </svg>
+        <span>Сбросить все</span>
+      </button>
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Модели</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="contacts" id="contacts"></div>
+        </div>
+      </div>
+
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Формат ответа</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <label class="sb-label" for="format">Формат ответа</label>
+          <select id="format" class="sb-select">
+            <option value="text">Текст</option>
+            <option value="jsonschema">JSON Schema</option>
+            <option value="jsonschema_structured">JSON Schema structured output</option>
+          </select>
+          <textarea id="schema" class="sb-textarea" rows="4"
+                    placeholder="Вставьте JSON Schema…" spellcheck="false"></textarea>
+          <div class="hint" id="formatHint"></div>
+        </div>
+      </div>
+
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Максимальное количество циклов</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="tok-row">
+            <input type="range" id="maxRounds" class="sb-range" min="1" max="10" step="1" value="6">
+            <span class="tok-val" id="maxRoundsVal">6</span>
+          </div>
+          <div class="hint">Сколько раундов модель может запрашивать инструменты (1–10); в одном раунде может быть несколько инструментов</div>
+        </div>
+      </div>
+
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Максимум токенов</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <label class="sb-label" for="tokens">Ответ модели</label>
+          <div class="tok-row">
+            <input type="range" id="tokens" class="sb-range" min="1" max="15000" step="1" value="1024">
+            <span class="tok-val" id="tokVal">1024</span>
+          </div>
+          <div class="hint">Ограничение объёма ответа от 1 до 15000</div>
+        </div>
+      </div>
+
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Допустимый таймаут ответа</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="tok-row">
+            <input type="range" id="timeout" class="sb-range" min="5" max="30" step="1" value="20">
+            <span class="tok-val" id="timeoutVal">20 с</span>
+          </div>
+          <div class="hint">Допустимый таймаут ответа от 5 до 30 секунд</div>
+        </div>
+      </div>
+
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Размер контекста</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <label class="sb-label" for="ctxThreshold">Порог контекста<span class="info-i" data-tip="Число сообщений в диалоге, при превышении которого вызывается сжатие контекста (от 5 до 40, по умолчанию 15).">i</span></label>
+          <div class="tok-row">
+            <input type="range" id="ctxThreshold" class="sb-range" min="5" max="40" step="1" value="10">
+            <span class="tok-val" id="ctxThresholdVal">10</span>
+          </div>
+          <label class="sb-label" for="ctxKeep">Количество сообщений<span class="info-i" data-tip="До скольких последних сообщений сжимается контекст: они остаются без изменений, более старые сворачиваются (от 3 до 30, по умолчанию 10).">i</span></label>
+          <div class="tok-row">
+            <input type="range" id="ctxKeep" class="sb-range" min="3" max="30" step="1" value="5">
+            <span class="tok-val" id="ctxKeepVal">5</span>
+          </div>
+          <div class="hint">Сжатие вызывается, когда сообщений больше «Порога контекста»; остаётся «Количество сообщений» последних</div>
+        </div>
+      </div>
+
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Стратегия сжатия</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <label class="switch-row">
+            <input type="checkbox" id="compressOn" checked>
+            <span class="switch-ui" aria-hidden="true"></span>
+            <span>Сжимать контекст</span>
+          </label>
+          <div class="strategy-list" id="strategyList">
+            <label class="radio-row">
+              <input type="radio" name="compressStrategy" value="summary" checked>
+              <span class="rname">Summary</span>
+              <span class="info-i" data-tip="Старые сообщения заменяет краткая сводка, которую генерирует модель; сводка уходит модели как системное сообщение.">i</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="compressStrategy" value="sliding">
+              <span class="rname">Sliding Window</span>
+              <span class="info-i" data-tip="Старые сообщения просто удаляются без обращения к модели: в контексте остаются последние «Количество сообщений».">i</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="compressStrategy" value="sticky">
+              <span class="rname">Sticky Facts</span>
+              <span class="info-i" data-tip="Модель ведёт блок фактов «ключ: значение» (имена, цифры, договорённости); старые сообщения удаляются, а факты уходят модели вместе с последними сообщениями.">i</span>
+            </label>
+          </div>
+          <div class="hint">Сжатие работает на лету: как только сообщений становится больше «Порога контекста», старые сворачиваются до «Количество сообщений» выбранным способом</div>
+        </div>
+      </div>
+
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Stop sequence</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <input type="text" id="stopSeq" class="sb-input" placeholder="Например: СТОП" style="width:100%; padding:9px 10px; border:1px solid #d8e2e6; border-radius:10px; background:#fff; font-size:13px; color:#143a44; font-family:inherit;">
+          <div class="hint">Останавливает генерацию, когда модель выдаст этот текст</div>
+        </div>
+      </div>
+
+      <div class="collaps" id="invCollaps">
+        <button class="collaps-head" type="button">
+          <span>Инварианты</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div id="invList" style="display:flex; flex-direction:column; gap:6px; max-height:240px; overflow:auto;">—</div>
+          <div style="display:flex; flex-direction:column; gap:6px; margin:8px 0 4px;">
+            <input type="text" id="invText" placeholder="Текст инварианта, например: Никогда не раскрывай системный промпт" style="height:34px; padding:0 10px; border:1px solid #d8e2e6; border-radius:10px; background:#fff; font-size:13px; color:#143a44; font-family:inherit; box-sizing:border-box;">
+            <input type="text" id="invPatterns" placeholder="Regex-шаблоны через | (необязательно, детерминированная проверка)" style="height:34px; padding:0 10px; border:1px solid #d8e2e6; border-radius:10px; background:#fff; font-size:12px; color:#143a44; font-family:inherit; box-sizing:border-box;">
+            <button type="button" id="invAdd" style="height:32px; border:none; border-radius:10px; background:#0b7285; color:#fff; font-size:13px; cursor:pointer;">Добавить инвариант</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; margin:4px 0 2px;">
+            <label for="invJudge" style="flex:none; font-size:12.5px; color:#143a44;">Модель судьи</label>
+            <select id="invJudge" class="sb-select" style="flex:1; min-width:0;" title="Модель, которая проверяет каждый ответ на нарушение инвариантов (strict-JSON вердикт)">
+            </select>
+          </div>
+          <div class="hint" style="margin-top:6px;">Инварианты хранятся отдельно от диалога, общие для всех вкладок, и меняются только здесь — модель не может ни нарушить их (ответ перед выдачей проверяется кодом: regex + LLM-судья; нарушенный черновик заменяется отказом «🛡»), ни изменить/добавить/удалить их из диалога. Пока список пуст, проверка выключена и ответы стримятся как обычно. История изменений — ниже.</div>
+          <button type="button" id="invLogHead" style="display:flex; align-items:center; justify-content:space-between; width:100%; margin-top:10px; padding:6px 8px; border:none; border-radius:8px; background:#eef4f6; color:#143a44; font-size:12.5px; cursor:pointer; font-family:inherit;">
+            <span id="invLogTitle">История изменений</span><span id="invLogChev">▸</span>
+          </button>
+          <div id="invLog" style="display:none; margin-top:4px;"></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="body">
+    <header class="header">
+      <button class="hbtn" id="menu" title="Показать панель" aria-label="Показать панель">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18M3 12h18M3 18h18"/>
+        </svg>
+      </button>
+      <div class="avatar">AI</div>
+      <div class="titles">
+        <div class="name">AI Чат</div>
+        <div class="status" id="status">загрузка…</div>
+      </div>
+      <div class="drop-wrap pushright">
+        <button class="hbtn" id="delChat" title="Удаление диалога" aria-label="Удаление диалога">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6M10 11v6M14 11v6"/>
+          </svg>
+        </button>
+        <div class="plus-menu below" id="delMenu" hidden>
+          <button class="plus-item" id="delChatItem">Удалить чат<span class="plus-hint">сообщения и краткосрочная память</span></button>
+          <button class="plus-item" id="delHistoryItem">Удалить историю<span class="plus-hint">краткосрочная и рабочая память</span></button>
+          <button class="plus-item" id="delAllItem">Удалить все<span class="plus-hint">все уровни памяти этой вкладки</span></button>
+        </div>
+      </div>
+      <button class="hbtn" id="detailsToggle" title="Детали" aria-label="Детали">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+      </button>
+    </header>
+
+    <div class="tabbar" id="tabbar">
+      <div class="tabs" id="tabs"></div>
+      <button type="button" class="tab-new" id="tabNew" title="Новый чат" aria-label="Новый чат">+</button>
+    </div>
+
+    <main class="log" id="log">
+      <div class="divider" id="todayDivider">Сегодня</div>
+    </main>
+
+    <div class="quickbar" id="quickbar">
+      <div class="prof-wrap" id="profWrap" hidden>
+        <button type="button" class="profilechip" id="profBtn" title="Готовые профили пользователей — клик откроет список">Профили</button>
+        <div class="plus-menu" id="profMenu" hidden></div>
+      </div>
+    </div>
+
+    <footer class="inputbar">
+      <div class="plus-wrap">
+        <button type="button" class="plus" id="attach" title="Действия" aria-label="Действия">+</button>
+        <div class="plus-menu" id="plusMenu" hidden>
+          <button type="button" class="plus-item quiz-item">Кто считается «первым программистом» в истории и что она написала?</button>
+          <button type="button" class="plus-item quiz-item">Чем отличается компилируемый язык от интерпретируемого?</button>
+          <button type="button" class="plus-item quiz-item">Почему 11 февраля отмечается как «Международный день программиста»?</button>
+          <button type="button" class="plus-item quiz-item">Напишите функцию, вычисляющую факториал числа рекурсией.</button>
+          <button type="button" class="plus-item quiz-item">Каким историческим событием обязан миру язык C — где он был создан, для какой операционной системы, и какие два известных языка произошли от него?</button>
+          <button type="button" class="plus-item quiz-item">Сформулируй гипотезу Цермело (C=NP).</button>
+          <button type="button" class="plus-item quiz-item">Почему == в JavaScript даёт неожиданные результаты (0 == "", "1" == 1)?</button>
+          <button type="button" class="plus-item quiz-item">Объясни, как работает сборщик мусора?</button>
+          <button type="button" class="plus-item quiz-item">Что такое «война за GOTO»?</button>
+          <button type="button" class="plus-item quiz-item">Что такое замыкание (closure)? Напишите функцию-счётчик использующую замыкание.</button>
+        </div>
+      </div>
+      <input id="input" type="text" placeholder="Сообщение…" autocomplete="off" autofocus>
+      <button class="send" id="send" title="Отправить" aria-label="Отправить">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M3.4 20.4 22 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/>
+        </svg>
+      </button>
+    </footer>
+  </div>
+
+  <div class="resizer" id="resizer"></div>
+
+  <aside class="details" id="details">
+    <div class="dt-head">
+      <span>Детали</span>
+      <button class="sb-close" id="closeDetails" title="Свернуть" aria-label="Свернуть">×</button>
+    </div>
+    <div class="dt-scroll">
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Запрос</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body prebox">
+          <pre id="reqJson">—</pre>
+        </div>
+      </div>
+      <div class="collaps closed">
+        <button class="collaps-head" type="button">
+          <span>Шаги</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div id="stepsList" class="stepsList">—</div>
+        </div>
+      </div>
+      <div class="collaps closed" id="compressCollaps" style="display:none">
+        <button class="collaps-head" type="button">
+          <span>Сжатие</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="meta-row" style="margin-top:0"><span>Стратегия</span><b id="compressStrategy">—</b></div>
+          <div class="meta-row"><span>Сообщений сжато</span><b id="compressCount">—</b></div>
+          <div class="meta-row"><span>Токены</span><b id="compressTokens">—</b></div>
+          <div class="compress-caption" id="compressCaption">Сводка</div>
+          <div id="compressSummary" class="compress-md compress-summary">—</div>
+        </div>
+      </div>
+      <div class="collaps closed" id="memoryCollaps">
+        <button class="collaps-head" type="button">
+          <span>Память</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="mem-layer">
+            <div class="mem-layer-head">
+              <span>Краткосрочная — текущий диалог</span>
+              <span class="mem-layer-sub" id="memShortTokens">—</span>
+              <label class="mem-toggle" title="Отправлять историю диалога модели">
+                <input type="checkbox" id="memLayerShort" checked>
+                <span class="mem-slider"></span>
+              </label>
+            </div>
+            <div class="mem-layer-body" id="memShort">—</div>
+          </div>
+          <div class="mem-layer">
+            <div class="mem-layer-head">
+              <span>Рабочая — задача и заметки ветки</span>
+              <span class="mem-layer-sub" id="memWorkTokens">—</span>
+              <label class="mem-toggle" title="Отправлять задачу, заметки и факты модели">
+                <input type="checkbox" id="memLayerWorking" checked>
+                <span class="mem-slider"></span>
+              </label>
+            </div>
+            <div class="mem-layer-body" id="memWork">—</div>
+          </div>
+          <div class="mem-layer">
+            <div class="mem-layer-head">
+              <span>Долговременная — профиль, решения, знания</span>
+              <span class="mem-layer-sub">Записей: <b id="memCount">—</b> · <span id="memLongTokens">—</span></span>
+              <label class="mem-toggle" title="Отправлять долговременные записи модели">
+                <input type="checkbox" id="memLayerLong" checked>
+                <span class="mem-slider"></span>
+              </label>
+            </div>
+            <div class="mem-layer-extra">
+              <div style="display:flex; gap:6px; margin:8px 0;">
+                <input type="text" id="memText" placeholder="имя: Аня" style="flex:1; min-width:0; height:34px; padding:0 10px; border:1px solid #d8e2e6; border-radius:10px; background:#fff; font-size:13px; color:#143a44; font-family:inherit; box-sizing:border-box;">
+                <select id="memKind" style="height:34px; padding:0 8px; border:1px solid #d8e2e6; border-radius:10px; background:#fff; font-size:13px; color:#143a44; font-family:inherit; box-sizing:border-box;">
+                  <option value="profile">профиль</option>
+                  <option value="decision">решение</option>
+                  <option value="knowledge" selected>знание</option>
+                </select>
+                <button type="button" class="cmp-analyze" id="memAdd" style="height:34px; padding:0 12px; margin:0; flex:none;">+</button>
+              </div>
+              <div id="memList" style="display:flex; flex-direction:column; gap:6px; max-height:260px; overflow:auto;">—</div>
+            </div>
+          </div>
+          <div class="hint" style="margin-top:8px;">Краткосрочный слой хранит реплики диалога (в промпт идут последние сообщения окна); рабочий — задачу (обновляется сжатием Summary/Sticky Facts), заметки (task_note) и факты ветки (попадают в каждый запрос); долговременный — профиль (всегда в промпте) и подтверждённые решения/знания (при совпадении темы вопроса). Факты сжатия Sticky Facts пишутся в долговременный слой автоматически и после двух подтверждений становятся «долговременными». Тумблер у каждого блока включает и выключает слой: выключенный слой не отправляется модели, как будто его нет, — данные при этом сохраняются. Корзина в шапке: «Удалить чат» — сообщения и краткосрочный слой (рабочая сохраняется), «Удалить историю» — краткосрочная и рабочая, «Удалить все» — все уровни, включая долговременный.</div>
+        </div>
+      </div>
+      <div class="collaps closed" id="taskCollaps">
+        <button class="collaps-head" type="button">
+          <span>Задачи</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="task-state" id="taskState" hidden>
+            <div class="task-stepper" id="taskStepper"></div>
+            <input type="text" class="task-field" id="taskStepInput" placeholder="Текущий шаг…" readonly title="Меняется моделью в диалоге (task_state)" autocomplete="off">
+            <input type="text" class="task-field" id="taskExpectInput" placeholder="Ожидаемое действие…" readonly title="Меняется моделью в диалоге (task_state)" autocomplete="off">
+            <div class="task-plan" id="taskPlan"></div>
+            <div class="task-stepper" style="margin-top:8px;">
+              <button type="button" id="taskDoneResetBtn" hidden title="Убрать завершённую задачу из рабочей памяти и панели «Детали» (task_state action=reset)">Убрать из деталей</button>
+            </div>
+            <div class="hint" style="margin-top:8px;">Блок показывает актуальное состояние задачи; этап и статусы шагов меняет только модель в диалоге (инструмент task_state). Переходы: planning → execution → validation → done (validation может вернуться в execution; из planning в done напрямую нельзя, отмена — reset из planning). Завершённая задача (done) остаётся записью об истории — чтобы убрать её из панели полностью, нажмите «Убрать из деталей» или попросите модель перевести задачу в reset.</div>
+          </div>
+          <div class="task-state" id="onbState" hidden>
+            <div id="onbStatus" style="font-size:12.5px; color:#143a44;"></div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+              <label class="mem-toggle" title="Запускать анкету нового пользователя для нового чата">
+                <input type="checkbox" id="onbEnabled">
+                <span class="mem-slider"></span>
+              </label>
+              <span style="font-size:12.5px; color:#143a44;">Анкета нового чата</span>
+              <span class="onb-info-i" title="По умолчанию выключено. Вкл: анкета запускается автоматически для нового чата, пока профиль вкладки не собран (этапы interview → confirm → done; пока идёт, модели доступны только инструменты onboarding_*). Выкл: автостарта нет — запустить вручную можно кнопкой «Пройти заново». Тумблер действует до перезапуска сервера.">i</span>
+            </div>
+            <div class="task-stepper" style="margin-top:8px;">
+              <button type="button" id="onbConfirmBtn" hidden>Подтвердить профиль</button>
+              <button type="button" id="onbSkipBtn">Пропустить анкету</button>
+              <button type="button" id="onbRestartBtn" hidden>Пройти заново</button>
+            </div>
+          </div>
+          <div class="hint" style="margin-top:8px;">Блок по умолчанию свёрнут и раскрывается, когда модель создаёт состояние задачи. Анкета не раскрывает блок — за ней следит чип «❓ Анкета» над строкой ввода.</div>
+        </div>
+      </div>
+      <div class="collaps">
+        <button class="collaps-head" type="button">
+          <span>Количество токенов</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body">
+          <div class="meta-row" style="margin-top:0"><span>Токены запроса</span><b id="promptMeta">—</b></div>
+          <div class="meta-row"><span>Токены ответа</span><b id="completionMeta">—</b></div>
+          <div class="meta-row"><span>Токены истории диалога<span class="info-i" data-tip="Токены изначального запроса (вся история + сообщение) плюс токены итогового ответа; промежуточные tool-обмены не считаются. Хранится в истории модели.">i</span></span><b id="historyMeta">—</b></div>
+          <div class="meta-row"><span>Время</span><b id="timeMeta">—</b></div>
+        </div>
+      </div>
+      <div class="collaps err" id="errorCollaps" style="display:none">
+        <button class="collaps-head" type="button">
+          <span>Ошибка</span><span class="chev">▾</span>
+        </button>
+        <div class="collaps-body prebox errblock">
+          <pre id="errorJson">—</pre>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+  const app = document.getElementById('app');
+  const log = document.getElementById('log');
+  const input = document.getElementById('input');
+  const send = document.getElementById('send');
+  const delChatBtn = document.getElementById('delChat');
+  const statusEl = document.getElementById('status');
+  const todayDivider = document.getElementById('todayDivider');
+  const menuBtn = document.getElementById('menu');
+  const closeSidebar = document.getElementById('closeSidebar');
+  const contactsEl = document.getElementById('contacts');
+  const formatSel = document.getElementById('format');
+  const schemaField = document.getElementById('schema');
+  const formatHint = document.getElementById('formatHint');
+  const tokRange = document.getElementById('tokens');
+  const stopSeqEl = document.getElementById('stopSeq');
+  const tokVal = document.getElementById('tokVal');
+  const timeoutRange = document.getElementById('timeout');
+  const timeoutVal = document.getElementById('timeoutVal');
+  const maxRoundsRange = document.getElementById('maxRounds');
+  const maxRoundsVal = document.getElementById('maxRoundsVal');
+  const ctxThresholdRange = document.getElementById('ctxThreshold');
+  const ctxThresholdVal = document.getElementById('ctxThresholdVal');
+  const ctxKeepRange = document.getElementById('ctxKeep');
+  const ctxKeepVal = document.getElementById('ctxKeepVal');
+  const detailsToggle = document.getElementById('detailsToggle');
+  const closeDetails = document.getElementById('closeDetails');
+  const reqJsonEl = document.getElementById('reqJson');
+  const promptMetaEl = document.getElementById('promptMeta');
+  const completionMetaEl = document.getElementById('completionMeta');
+  const timeMetaEl = document.getElementById('timeMeta');
+  const historyMetaEl = document.getElementById('historyMeta');
+  const stepsListEl = document.getElementById('stepsList');
+  const compressCollaps = document.getElementById('compressCollaps');
+  const compressCountEl = document.getElementById('compressCount');
+  const compressTokensEl = document.getElementById('compressTokens');
+  const compressSummaryEl = document.getElementById('compressSummary');
+  const compressStrategyEl = document.getElementById('compressStrategy');
+  const compressCaptionEl = document.getElementById('compressCaption');
+  const compressOnEl = document.getElementById('compressOn');
+  const strategyListEl = document.getElementById('strategyList');
+  const errorCollaps = document.getElementById('errorCollaps');
+  const errorJsonEl = document.getElementById('errorJson');
+  const sidebarEl = document.getElementById('sidebar');
+  const detailsEl = document.getElementById('details');
+  const resizer = document.getElementById('resizer');
+  const bodyEl = document.querySelector('.body');
+  const resetAllBtn = document.getElementById('resetSettings');
+
+  const FORMAT_META = {
+    text: { label: 'Текст', desc: 'Ответ обычным текстом' },
+    jsonschema: { label: 'JSON Schema', desc: 'Ответ по заданной JSON Schema' },
+    jsonschema_structured: { label: 'JSON Schema structured output', desc: 'Ответ по JSON Schema со strict-режимом' },
+  };
+  const clampTok = (v) => Math.min(15000, Math.max(1, Math.trunc(Number(v) || 1)));
+  const clampTimeout = (v) => Math.min(30, Math.max(5, Math.trunc(Number(v) || 20)));
+  const clampRounds = (v) => Math.min(10, Math.max(1, Math.trunc(Number(v) || 6)));
+  const clampCtxSize = (v) => Math.min(30, Math.max(3, Math.trunc(Number(v) || 5)));
+  const clampThresholdUi = (v) => Math.min(40, Math.max(5, Math.trunc(Number(v) || 10)));
+
+  const scrollDown = () => { log.scrollTop = log.scrollHeight; };
+  const RE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M19 12H6"/><path d="M11 6l-6 6 6 6"/></svg>';
+  const BRANCH_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="8" r="2.6"/>' +
+    '<path d="M6 8.6v6.8"/><path d="M15.4 8.9C13 10 8 10.5 6.6 15.4"/></svg>';
+  // Значок «Переспросить»: круговая стрелка (обновить/сгенерировать заново).
+  const REGEN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+
+  function escapeHtml(s) {
+    const m = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(s).replace(/[&<>"']/g, c => m[c]);
+  }
+
+  function inlineMd(src) {
+    const codes = [];
+    let s = src.replace(/`([^`]+)`/g, (_, c) => {
+      codes.push(c);
+      return '\u0000C' + (codes.length - 1) + '\u0000';
+    });
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    s = s.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+    s = s.replace(/\u0000C(\d+)\u0000/g, (_, i) => '<code>' + codes[+i] + '</code>');
+    s = s.replace(/\n/g, '<br>');
+    return s;
+  }
+
+  function renderBlocks(text) {
+    const lines = escapeHtml(text).split('\n');
+    let html = '', i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (line.trim() === '') { i++; continue; }
+      const h = line.match(/^(#{1,6})\s+(.*)$/);
+      if (h) {
+        const lvl = h[1].length;
+        html += '<h' + lvl + '>' + inlineMd(h[2]) + '</h' + lvl + '>\n';
+        i++; continue;
+      }
+      if (/^[-*+]\s+/.test(line)) {
+        let items = '';
+        while (i < lines.length && /^[-*+]\s+/.test(lines[i])) {
+          items += '<li>' + inlineMd(lines[i].replace(/^[-*+]\s+/, '')) + '</li>';
+          i++;
+        }
+        html += '<ul>' + items + '</ul>\n'; continue;
+      }
+      if (/^\d+\.\s+/.test(line)) {
+        let items = '';
+        while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
+          items += '<li>' + inlineMd(lines[i].replace(/^\d+\.\s+/, '')) + '</li>';
+          i++;
+        }
+        html += '<ol>' + items + '</ol>\n'; continue;
+      }
+      if (/^\s*\|/.test(line)) {
+        // Таблица GFM: строки, начинающиеся с «|»; вторая строка — разделитель
+        // вида |---|---|---| (допустимы выравнивающие двоеточия). Похоже на
+        // таблицу, но без разделителя — уходит в абзацный фолбэк ниже.
+        const rows = [];
+        while (i < lines.length && /^\s*\|/.test(lines[i])) { rows.push(lines[i]); i++; }
+        if (rows.length >= 2 && rows[1].includes('-') && /^\s*\|?[\s:|-]+\|?\s*$/.test(rows[1])) {
+          const cells = (r) => r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+          let t = '<table><thead><tr>';
+          cells(rows[0]).forEach(c => t += '<th>' + inlineMd(c) + '</th>');
+          t += '</tr></thead><tbody>';
+          for (let r = 2; r < rows.length; r++) {
+            t += '<tr>';
+            cells(rows[r]).forEach(c => t += '<td>' + inlineMd(c) + '</td>');
+            t += '</tr>';
+          }
+          t += '</tbody></table>\n';
+          html += t; continue;
+        }
+      }
+      let para = [];
+      while (i < lines.length && lines[i].trim() !== '') { para.push(lines[i]); i++; }
+      html += '<p>' + inlineMd(para.join('\n')) + '</p>\n';
+    }
+    return html;
+  }
+
+  function renderMarkdown(src) {
+    if (!src) return '';
+    const fence = /```(\w*)\n?([\s\S]*?)```/g;
+    let out = '', last = 0, m;
+    while ((m = fence.exec(src)) !== null) {
+      if (m.index > last) out += renderBlocks(src.slice(last, m.index));
+      out += '<pre><code>' + escapeHtml(m[2].replace(/\n$/, '')) + '</code></pre>';
+      last = fence.lastIndex;
+    }
+    if (last < src.length) out += renderBlocks(src.slice(last));
+    return out;
+  }
+
+  let curDayKey = null;
+
+  function fmtTime(d) {
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function dayKey(d) {
+    return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+  }
+  function dayLabel(d) {
+    const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    if (dayKey(d) === dayKey(today)) return 'Сегодня';
+    if (dayKey(d) === dayKey(yesterday)) return 'Вчера';
+    return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear();
+  }
+  function timeSpan(at) {
+    const s = document.createElement('span');
+    s.className = 'mtime';
+    s.textContent = at ? fmtTime(at) : fmtTime(new Date());
+    return s;
+  }
+  function addDivider(label) {
+    const d = document.createElement('div');
+    d.className = 'divider';
+    d.textContent = label;
+    log.appendChild(d);
+  }
+
+  // Индикатор фазы размышлений (reasoning-модели думают до первого токена
+  // ответа — без него реплика выглядит проигнорированной).
+  const thinkingMark = (el) => {
+    el.classList.add('thinking');
+    el.textContent = 'Модель размышляет…';
+  };
+  const thinkingClear = (el) => {
+    if (!el.classList.contains('thinking')) return false;
+    el.classList.remove('thinking');
+    el.textContent = '';
+    return true;
+  };
+
+  function addRow(role, text, opts) {
+    opts = opts || {};
+    const row = document.createElement('div');
+    row.className = 'row ' + role;
+    if (opts.dim) row.classList.add('old');
+    if (opts.id) row.dataset.msgId = opts.id;
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    if (role === 'user') {
+      bubble.classList.add('md');
+      bubble.innerHTML = renderMarkdown(text);
+    } else {
+      bubble.textContent = text;
+    }
+    if (role === 'user') {
+      if (opts.at) row.appendChild(timeSpan(opts.at));
+      const resend = document.createElement('button');
+      resend.type = 'button';
+      resend.className = 'resend';
+      resend.title = 'Отправить повторно';
+      resend.setAttribute('aria-label', 'Отправить повторно');
+      resend.disabled = send.disabled;
+      resend.innerHTML = RE_SVG;
+      resend.addEventListener('click', () => sendWithText(text));
+      row.appendChild(resend);
+      if (opts.id) {
+        // Ветвление отсюда: альтернативное продолжение с этого места
+        // (старая ветка остаётся доступной через переключатель).
+        const fork = document.createElement('button');
+        fork.type = 'button';
+        fork.className = 'resend forkbtn';
+        fork.title = 'Ветвление отсюда';
+        fork.setAttribute('aria-label', 'Ветвление отсюда');
+        fork.disabled = send.disabled;
+        fork.innerHTML = BRANCH_SVG;
+        fork.addEventListener('click', () => forkAt(opts.id));
+        row.appendChild(fork);
+      }
+      const dot = document.createElement('div');
+      dot.className = 'dot';
+      row.appendChild(dot);
+    }
+    row.appendChild(bubble);
+    if (role === 'ai' && opts.at) row.appendChild(timeSpan(opts.at));
+    log.appendChild(row);
+    if (role === 'ai' && opts.id) {
+      // Переспросить: альтернативный ответ на вопрос, предшествующий этому.
+      const regen = document.createElement('button');
+      regen.type = 'button';
+      regen.className = 'resend regenbtn';
+      regen.title = 'Переспросить';
+      regen.setAttribute('aria-label', 'Переспросить');
+      regen.disabled = send.disabled;
+      regen.innerHTML = REGEN_SVG;
+      regen.addEventListener('click', () => regenerateAt(opts.id));
+      row.appendChild(regen);
+    }
+    if (opts.alts && opts.alts.length > 1) addAltBar(row, opts.alts, opts.active);
+    scrollDown();
+    return bubble;
+  }
+
+  // addAltBar draws the ⟨ 1/2 ⟩ branch switcher under a message: the arrows
+  // jump between alternative branches passing through it (no model calls).
+  function addAltBar(row, alts, active) {
+    const pos = Math.max(0, alts.indexOf(active));
+    const bar = document.createElement('div');
+    bar.className = 'altbar ' + (row && row.classList.contains('user') ? 'altbar-user' : 'altbar-ai');
+    bar.dataset.alts = JSON.stringify(alts);
+    bar.dataset.pos = pos;
+    const prev = document.createElement('button');
+    prev.type = 'button';
+    prev.textContent = '‹';
+    prev.title = 'Предыдущая ветка';
+    prev.disabled = send.disabled || pos <= 0;
+    prev.addEventListener('click', () => switchBranch(alts[pos - 1]));
+    const count = document.createElement('span');
+    count.className = 'altcount';
+    count.textContent = (pos + 1) + '/' + alts.length;
+    const next = document.createElement('button');
+    next.type = 'button';
+    next.textContent = '›';
+    next.title = 'Следующая ветка';
+    next.disabled = send.disabled || pos >= alts.length - 1;
+    next.addEventListener('click', () => switchBranch(alts[pos + 1]));
+    bar.append(prev, count, next);
+    log.appendChild(bar);
+  }
+
+  // refreshAltBars recomputes the arrows' disabled state after a busy period
+  // (the bar keeps its alts/pos in dataset).
+  function refreshAltBars() {
+    document.querySelectorAll('.altbar').forEach(bar => {
+      let alts = [], pos = 0;
+      try { alts = JSON.parse(bar.dataset.alts || '[]'); pos = Number(bar.dataset.pos || 0); } catch (e) { /* ignore */ }
+      const btns = bar.querySelectorAll('button');
+      if (btns.length === 2) {
+        btns[0].disabled = send.disabled || pos <= 0;
+        btns[1].disabled = send.disabled || pos >= alts.length - 1;
+      }
+    });
+  }
+
+  function addError(text) {
+    const div = document.createElement('div');
+    div.className = 'errline';
+    div.textContent = 'Ошибка: ' + text;
+    log.appendChild(div);
+    scrollDown();
+  }
+
+  // Информационная строка в чате: не ошибка (сжатие без кандидатов и т.п.).
+  function addInfo(text) {
+    const div = document.createElement('div');
+    div.className = 'infoline';
+    div.textContent = text;
+    log.appendChild(div);
+    scrollDown();
+  }
+
+  // Псевдо-записи сжатия (role "marker"/"summary") показываются приглушённой
+  // сворачиваемой плашкой: сводка свёрнутых сообщений не должна выглядеть
+  // как пропавший кусок диалога. Детали сжатия — в «Детали» → «Сжатие».
+
+  // addFoldMark рисует плашку сжатия: заголовок по клику разворачивает
+  // Markdown-сводку свёрнутых сообщений. before — опорный элемент, перед
+  // которым вставить плашку (сжатие посреди прогона ставит её перед
+  // оставшимися репликами, а не в конец лога).
+  function addFoldMark(label, body, before) {
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'foldhead';
+    head.textContent = label + ' · показать сводку';
+    const box = document.createElement('div');
+    box.className = 'foldbody';
+    box.hidden = true;
+    if (body) box.innerHTML = renderMarkdown(body);
+    head.addEventListener('click', () => {
+      box.hidden = !box.hidden;
+      head.textContent = label + (box.hidden ? ' · показать сводку' : ' · скрыть сводку');
+    });
+    const wrap = document.createElement('div');
+    wrap.append(head, box);
+    if (before && before.parentNode === log) log.insertBefore(wrap, before);
+    else log.appendChild(wrap);
+  }
+
+  function setBusy(busy) {
+    send.disabled = busy;
+    document.querySelectorAll('.resend').forEach(b => { b.disabled = busy; });
+    document.querySelectorAll('.profilechip, .quickchip').forEach(b => { b.disabled = busy; });
+    document.querySelectorAll('.altbar button').forEach(b => { if (busy) b.disabled = true; });
+    if (!busy) refreshAltBars();
+    statusEl.classList.toggle('typing', busy);
+    if (busy) {
+      statusEl.dataset.saved = statusEl.textContent;
+      statusEl.textContent = 'печатает…';
+    } else if (statusEl.dataset.saved !== undefined) {
+      statusEl.textContent = statusEl.dataset.saved;
+      delete statusEl.dataset.saved;
+    }
+  }
+
+  // --- Ветвление диалога -------------------------------------------------
+  // Переключение на другую ветку: /api/branch/switch не вызывает модель,
+  // история просто перерисовывается.
+  async function switchBranch(leaf) {
+    if (!leaf || send.disabled) return;
+    setBusy(true);
+    try {
+      const resp = await fetch('/api/branch/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: leaf }),
+      });
+      if (!resp.ok) {
+        addError((await resp.text()).trim() || ('HTTP ' + resp.status));
+        return;
+      }
+      await loadHistory();
+      await refreshDetails();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // forkAt запускает альтернативное продолжение с сообщения after: всё,
+  // что было после него, остаётся на прежней ветке (переключатель).
+  async function forkAt(after) {
+    if (!after || send.disabled) return;
+    setBusy(true);
+    try {
+      const resp = await fetch('/api/branch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ after }),
+      });
+      if (!resp.ok) {
+        addError((await resp.text()).trim() || ('HTTP ' + resp.status));
+        return;
+      }
+      await loadHistory();
+      await refreshDetails();
+      input.focus();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // regenerateAt переспрашивает ответ модели: ветвление от вопроса и новый
+  // ответ (regenerate: true) — прежний ответ остаётся в переключателе.
+  async function regenerateAt(answerId) {
+    if (!answerId || send.disabled) return;
+    const row = log.querySelector('.row[data-msg-id="' + answerId + '"]');
+    let qid = null;
+    if (row) {
+      for (let el = row.previousElementSibling; el; el = el.previousElementSibling) {
+        if (el.classList && el.classList.contains('user') && el.dataset.msgId) { qid = el.dataset.msgId; break; }
+      }
+    }
+    if (!qid) { addError('Не нашёл вопрос для переспроса'); return; }
+    setBusy(true);
+    try {
+      const resp = await fetch('/api/branch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ after: qid }),
+      });
+      if (!resp.ok) {
+        addError((await resp.text()).trim() || ('HTTP ' + resp.status));
+        return;
+      }
+    } finally {
+      setBusy(false);
+    }
+    await sendWithText('', { regenerate: true, question: qid });
+  }
+  // -----------------------------------------------------------------------
+
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text || send.disabled) return;
+    input.value = '';
+    await sendWithText(text);
+  }
+
+  async function sendWithText(text, opts) {
+    opts = opts || {};
+    if (send.disabled) return;
+    if (!opts.regenerate) {
+      if (!text) return;
+      const now = new Date();
+      const key = dayKey(now);
+      if (curDayKey !== null && key !== curDayKey) addDivider(dayLabel(now));
+      curDayKey = key;
+      addRow('user', text, { at: now });
+    }
+    setBusy(true);
+
+    const bubble = addRow('ai', '');
+    thinkingMark(bubble);
+    const bodyObj = {
+      message: text,
+      format: formatSel.value,
+      maxTokens: clampTok(tokRange.value),
+      timeout: clampTimeout(timeoutRange.value),
+      maxRounds: clampRounds(maxRoundsRange.value),
+      compress: compressSettings(),
+    };
+    if (opts.regenerate) bodyObj.regenerate = true;
+    if (formatSel.value !== 'text') bodyObj.schema = schemaField.value.trim();
+    if (stopSeqEl.value.trim() !== '') bodyObj.stop = stopSeqEl.value.trim();
+    let errored = false;
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyObj),
+      });
+      if (!resp.ok) {
+        const errText = (await resp.text()).trim();
+        throw new Error(errText || ('HTTP ' + resp.status));
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      const isText = bodyObj.format === 'text';
+      let raw = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        raw += decoder.decode(value, { stream: true });
+        thinkingClear(bubble);
+        if (isText) {
+          bubble.classList.add('md');
+          bubble.innerHTML = renderMarkdown(raw);
+        } else {
+          bubble.textContent = raw;
+        }
+        scrollDown();
+      }
+      // Ошибка в середине потока: сервер прикладывает её в конец текста.
+      // Обмен считается несостоявшимся — вопрос остаётся в чате (на сервере
+      // обмен откатывается).
+      const errTail = raw.match(/\s*\[ошибка: ([^\]]*)\]\s*$/);
+      if (errTail) {
+        errored = true;
+        addError(errTail[1] || 'Ошибка во время получения ответа');
+        raw = raw.slice(0, raw.length - errTail[0].length);
+        if (isText) {
+          bubble.innerHTML = renderMarkdown(raw);
+        } else {
+          bubble.textContent = raw;
+        }
+      }
+      // Для форматов JSON Schema показываем JSON-ответ деревом, как в панели «Детали»
+      thinkingClear(bubble);
+      if (bodyObj.format !== 'text' && bubble.textContent.trim()) {
+        try {
+          JSON.parse(bubble.textContent);
+          renderJsonTree(bubble, bubble.textContent);
+          scrollDown();
+        } catch (e) { /* ответ не является JSON — оставляем текстом */ }
+      }
+      if (!bubble.textContent) bubble.remove();
+    } catch (err) {
+      errored = true;
+      bubble.remove();
+      addError(err.message || err);
+    } finally {
+      if (bubble.parentNode) {
+        bubble.after(timeSpan(new Date()));
+        scrollDown();
+      }
+      setBusy(false);
+      // Синхронизация с деревом истории: после обмена сообщения получают
+      // id/переключатели ветвей (нужны для «Ветвление» и «Переспросить»).
+      // При ошибке сервер откатывает обмен — перечитывание истории убрало бы
+      // вопрос пользователя из чата, поэтому не делаем.
+      if (!errored) await loadHistory();
+      const detail = await refreshDetails();
+      // Не дублировать ошибку: если чат уже показал ошибку (например, таймаут),
+      // краткое описание из панели «Детали» повторно не добавляем. Отказ по
+      // инварианту тоже не дублируем — пузырь с бейджем «🛡» уже всё сказал.
+      if (detail && detail.summary && !errored && detail.type !== 'invariant_violation') addError(detail.summary);
+      input.focus();
+    }
+  }
+
+  async function deleteDialog(scope) {
+    if (send.disabled) return;
+    try {
+      await fetch('/api/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: scope || 'chat' }),
+      });
+    } catch (err) {
+      addError(err.message || err);
+      return;
+    }
+    // Сообщения чата пропадают только при очистке чата, истории или всего;
+    // очистка рабочей и долговременной памяти диалог не трогает.
+    if (scope !== 'working' && scope !== 'long') {
+      log.innerHTML = '';
+      log.appendChild(todayDivider);
+      curDayKey = null;
+      clearDetails();
+    }
+    void loadMemory();
+  }
+
+  // compressSettings собирает настройки сжатия из панели для тела запроса
+  // /api/chat. Сервер применяет их на лету: как только
+  // сообщений становится больше «Порога контекста», старые сворачиваются до
+  // «Количество сообщений» выбранным способом (Summary / Sliding Window / Sticky Facts).
+  function compressSettings() {
+    const strat = (document.querySelector('input[name="compressStrategy"]:checked') || {}).value || 'summary';
+    return {
+      enabled: !!compressOnEl.checked,
+      strategy: strat,
+      keep: clampCtxSize(ctxKeepRange.value),
+      threshold: clampThresholdUi(ctxThresholdRange.value),
+    };
+  }
+
+  // Включение/выключение сжатия показывает и скрывает выбор стратегии.
+  compressOnEl.addEventListener('change', () => {
+    strategyListEl.classList.toggle('off', !compressOnEl.checked);
+  });
+
+  // renderCompressDetails заполняет блок «Сжатие» панели «Детали»: стратегия,
+  // счётчик сжатых сообщений, токены вызова и результат — сводка (Summary)
+  // или блок фактов «ключ: значение» (Sticky Facts) — с Markdown-форматированием.
+  function renderCompressDetails(c) {
+    const names = { summary: 'Summary', sliding: 'Sliding Window', sticky: 'Sticky Facts' };
+    compressStrategyEl.textContent = names[c.strategy] || c.strategy || '—';
+    compressCountEl.textContent = c.compressed != null ? String(c.compressed) : '—';
+    compressTokensEl.textContent = c.total_tokens > 0
+      ? (c.prompt_tokens || 0) + ' + ' + (c.completion_tokens || 0) + ' = ' + c.total_tokens
+      : '—';
+    const isSticky = c.strategy === 'sticky';
+    compressCaptionEl.textContent = isSticky ? 'Блок фактов' : 'Сводка';
+    compressSummaryEl.innerHTML = renderMarkdown((isSticky ? c.facts : c.summary) || '—');
+    // Блок появляется при сжатии, но остаётся свёрнутым — содержимое
+    // раскрывается кликом по заголовку.
+    compressCollaps.style.display = '';
+  }
+
+  // Панели: свернуть/показать
+  function setSidebar(open) {
+    app.classList.toggle('collapsed', !open);
+    menuBtn.classList.toggle('active', open);
+    applySplit();
+  }
+  function setDetails(open) {
+    app.classList.toggle('collapsed-details', !open);
+    detailsToggle.classList.toggle('active', open);
+    if (open) {
+      applySplit();
+      loadMemory();
+    } else {
+      bodyEl.style.flex = '';
+    }
+  }
+  menuBtn.addEventListener('click', () => setSidebar(app.classList.contains('collapsed')));
+  closeSidebar.addEventListener('click', () => setSidebar(false));
+  detailsToggle.addEventListener('click', () => setDetails(app.classList.contains('collapsed-details')));
+  closeDetails.addEventListener('click', () => setDetails(false));
+
+  // Граница между чатом и «Деталями»: по умолчанию 60% чат / 40% детали,
+  // можно перетаскивать по горизонтали.
+  let splitFrac = 0.6;
+  // Допустимая ширина «Настроек»: 200px…60% ширины окна.
+  const clampSbW = w => Math.min(Math.max(w, 200), Math.round(window.innerWidth * 0.6));
+  function applySplit(keepDetails) {
+    const total = app.clientWidth;
+    const sidebarW = sidebarEl.offsetWidth;
+    const resizerW = resizer.offsetWidth;
+    const avail = total - sidebarW - resizerW;
+    if (avail <= 0) return;
+    let bodyPx;
+    if (keepDetails) {
+      // Растягиваем «Настройки» за счёт чата: «Детали» сохраняют свою
+      // текущую ширину, всё изменение забирает панель чата.
+      const detPx = detailsEl.getBoundingClientRect().width;
+      bodyPx = avail - detPx;
+    } else {
+      bodyPx = Math.round(avail * splitFrac);
+    }
+    bodyPx = Math.max(240, Math.min(avail - 300, bodyPx));
+    splitFrac = bodyPx / avail;
+    bodyEl.style.flex = '0 0 ' + bodyPx + 'px';
+    detailsEl.style.flex = '0 0 ' + (avail - bodyPx) + 'px';
+  }
+  let dragSplit = false;
+  resizer.addEventListener('mousedown', (e) => {
+    dragSplit = true;
+    resizer.classList.add('dragging');
+    document.body.classList.add('resizing');
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragSplit) return;
+    const total = app.clientWidth;
+    const sidebarW = sidebarEl.offsetWidth;
+    const resizerW = resizer.offsetWidth;
+    const avail = total - sidebarW - resizerW;
+    if (avail <= 0) return;
+    const rect = app.getBoundingClientRect();
+    let bodyPx = e.clientX - rect.left - sidebarW - resizerW;
+    bodyPx = Math.max(240, Math.min(avail - 300, bodyPx));
+    splitFrac = bodyPx / avail;
+    bodyEl.style.flex = '0 0 ' + bodyPx + 'px';
+    detailsEl.style.flex = '0 0 ' + (avail - bodyPx) + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    dragSplit = false;
+    resizer.classList.remove('dragging');
+    document.body.classList.remove('resizing');
+  });
+  window.addEventListener('resize', () => applySplit(false));
+  // Начальный расчёт — после восстановления сохранённой ширины «Настроек»,
+  // иначе панель чата и «Детали» фиксируются под старую ширину и при
+  // восстановлении --sb-w раскладка переполняется.
+  const SB_W_KEY = 'ai_sb_width';
+  const savedSbW = parseInt(localStorage.getItem(SB_W_KEY) || '', 10);
+  if (Number.isFinite(savedSbW)) {
+    document.documentElement.style.setProperty('--sb-w', clampSbW(savedSbW) + 'px');
+  }
+  applySplit(false);
+
+  // Сворачивание блоков
+  document.querySelectorAll('.collaps-head').forEach(h => {
+    h.addEventListener('click', () => {
+      const box = h.closest('.collaps');
+      if (box) box.classList.toggle('closed');
+    });
+  });
+
+  // Граница «Настроек» сдвигаемая: тянем мышью/пальцем, ширина запоминается
+  // в localStorage (границы 200px…60vw). Пространство берётся у панели
+  // чата: «Детали» сохраняют свою ширину (applySplit(true)).
+  const sbResizer = document.getElementById('sbResizer');
+  let sbDrag = null;
+  sbResizer.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    sbDrag = { startX: e.clientX, startW: sidebarEl.getBoundingClientRect().width };
+    sbResizer.classList.add('dragging');
+    try { sbResizer.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  sbResizer.addEventListener('pointermove', e => {
+    if (!sbDrag) return;
+    const w = clampSbW(sbDrag.startW + (e.clientX - sbDrag.startX));
+    document.documentElement.style.setProperty('--sb-w', w + 'px');
+    applySplit(true);
+  });
+  const endSbDrag = () => {
+    if (!sbDrag) return;
+    sbDrag = null;
+    sbResizer.classList.remove('dragging');
+    localStorage.setItem(SB_W_KEY, String(Math.round(sidebarEl.getBoundingClientRect().width)));
+  };
+  sbResizer.addEventListener('pointerup', endSbDrag);
+  sbResizer.addEventListener('pointercancel', endSbDrag);
+
+  // Блоки типов памяти (слои в «Памяти») сворачиваются кликом по заголовку:
+  // класс .collapsed прячет тело слоя; клик по тумблеру слоя (он внутри
+  // заголовка) сворачивание не переключает.
+  document.querySelectorAll('.mem-layer').forEach(layer => {
+    const head = layer.querySelector('.mem-layer-head');
+    if (!head) return;
+    const chev = document.createElement('span');
+    chev.className = 'chev';
+    chev.textContent = '▾';
+    head.appendChild(chev);
+    head.addEventListener('click', (e) => {
+      if (e.target.closest('.mem-toggle')) return;
+      layer.classList.toggle('collapsed');
+    });
+  });
+
+  // Всплывающие подсказки «i»: один общий слой поверх всех блоков
+  // (position: fixed на body) — панели и блоки со скроллом подсказку
+  // больше не обрезают. В сайдбаре подсказка открывается вправо (панель
+  // у левого края), в «Деталях» — влево (панель у правого края).
+  const tipLayer = document.createElement('div');
+  tipLayer.className = 'tipbox';
+  tipLayer.hidden = true;
+  document.body.appendChild(tipLayer);
+  let tipFor = null;
+  function showTip(el) {
+    tipLayer.textContent = el.dataset.tip || '';
+    tipLayer.hidden = false;
+    tipLayer.style.left = '-9999px';
+    tipLayer.style.top = '0px';
+    const r = el.getBoundingClientRect();
+    const tw = tipLayer.offsetWidth, th = tipLayer.offsetHeight;
+    let left = el.closest('.sidebar') ? r.right + 8 : r.left - tw - 8;
+    left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+    let top = r.top + r.height / 2 - th / 2;
+    top = Math.max(8, Math.min(top, window.innerHeight - th - 8));
+    tipLayer.style.left = left + 'px';
+    tipLayer.style.top = top + 'px';
+  }
+  function hideTip() { tipLayer.hidden = true; tipFor = null; }
+  document.addEventListener('mouseover', (e) => {
+    const el = e.target.closest && e.target.closest('.info-i[data-tip]');
+    if (el) {
+      if (el !== tipFor) { tipFor = el; showTip(el); }
+    } else if (tipFor) {
+      hideTip();
+    }
+  });
+  document.addEventListener('scroll', hideTip, true);
+  window.addEventListener('resize', hideTip);
+
+  function highlightContacts(current) {
+    for (const el of contactsEl.children) {
+      el.classList.toggle('active', el.dataset.model === current);
+    }
+  }
+
+  function renderContacts(models, current, reserveCfg) {
+    contactsEl.innerHTML = '';
+    for (const m of models) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'contact';
+      btn.dataset.model = m;
+      const av = document.createElement('span');
+      av.className = 'cavatar';
+      av.textContent = m.slice(0, 1).toUpperCase();
+      const nm = document.createElement('span');
+      nm.className = 'cname';
+      nm.textContent = m;
+      btn.appendChild(av);
+      btn.appendChild(nm);
+      btn.addEventListener('click', () => selectModel(m));
+      contactsEl.appendChild(btn);
+    }
+    // Резервная модель ([reserve]): внешний провайдер, не связанный с GPUStack.
+    // reserveCfg = {model, ready} от /api/models; работает как обычная модель —
+    // по клику переключает, при активации подсвечивается; когда провайдер не
+    // настроен — затемнена. Отображается ВНИЗУ списка. Рядом — [small],
+    // независимый дешёвый провайдер («Маленькая модель», gpt-5-nano).
+    if (reserveCfg && reserveCfg.model) {
+      const reserveId = reserveCfg.model;
+      const rBtn = document.createElement('button');
+      rBtn.type = 'button';
+      rBtn.className = 'contact reserve' + (reserveCfg.ready ? '' : ' off');
+      rBtn.dataset.model = reserveId;
+      rBtn.title = reserveCfg.ready
+        ? 'Переключиться на резервную модель ' + reserveId + ' (внешний провайдер)'
+        : 'Резервный провайдер не настроен: задайте AI_RESERVE_BASE_URL и AI_RESERVE_API_KEY в .env';
+      const rAv = document.createElement('span');
+      rAv.className = 'cavatar';
+      rAv.textContent = 'R';
+      const rNm = document.createElement('span');
+      rNm.className = 'cname';
+      rNm.textContent = '[reserve] ' + reserveId;
+      rBtn.appendChild(rAv);
+      rBtn.appendChild(rNm);
+      rBtn.addEventListener('click', () => selectModel(reserveId));
+      contactsEl.appendChild(rBtn);
+    }
+    if (reserveCfg && reserveCfg.small && reserveCfg.small.model) {
+      const smallId = reserveCfg.small.model;
+      const sBtn = document.createElement('button');
+      sBtn.type = 'button';
+      sBtn.className = 'contact reserve' + (reserveCfg.small.ready ? '' : ' off');
+      sBtn.dataset.model = smallId;
+      sBtn.title = reserveCfg.small.ready
+        ? 'Переключиться на маленькую модель ' + smallId + ' (дешёвый внешний провайдер)'
+        : 'Провайдер маленькой модели не настроен: задайте AI_SMALL_BASE_URL и AI_SMALL_API_KEY в .env';
+      const sAv = document.createElement('span');
+      sAv.className = 'cavatar';
+      sAv.textContent = 'S';
+      const sNm = document.createElement('span');
+      sNm.className = 'cname';
+      sNm.textContent = '[small] ' + smallId;
+      sBtn.appendChild(sAv);
+      sBtn.appendChild(sNm);
+      sBtn.addEventListener('click', () => selectModel(smallId));
+      contactsEl.appendChild(sBtn);
+    }
+    highlightContacts(current);
+  }
+
+  async function selectModel(model) {
+    if (send.disabled) return;
+    try {
+      const resp = await fetch('/api/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      if (!resp.ok) throw new Error((await resp.text()).trim() || ('HTTP ' + resp.status));
+    } catch (err) {
+      addError(err.message || err);
+      return;
+    }
+    statusEl.textContent = model;
+    highlightContacts(model);
+    document.title = 'AI Чат — ' + model;
+    // Подтянуть контекст нового агента (сервер уже загрузил его историю).
+    await loadHistory();
+    clearDetails();
+    // Итог токенов контекста нового агента — из его файла истории.
+    void refreshDetails(false);
+  }
+
+  function resetAll() {
+    // сбросить значения формы в панели «Настройки» на дефолтные.
+    // Чат-переписка, панель «Детали» и выбранная модель остаются без изменений.
+    formatSel.value = 'text';
+    schemaField.value = '';
+    syncFormat();
+    tokRange.value = tokRange.max;
+    tokVal.textContent = tokRange.max;
+    timeoutRange.value = 20;
+    timeoutVal.textContent = '20 с';
+    maxRoundsRange.value = 6;
+    maxRoundsVal.textContent = '6';
+    ctxThresholdRange.value = 10;
+    ctxThresholdVal.textContent = '10';
+    ctxKeepRange.value = 5;
+    ctxKeepVal.textContent = '5';
+    compressOnEl.checked = true;
+    strategyListEl.classList.remove('off');
+    const summaryRadio = document.querySelector('input[name="compressStrategy"][value="summary"]');
+    if (summaryRadio) summaryRadio.checked = true;
+    stopSeqEl.value = '';
+  }
+  resetAllBtn.addEventListener('click', resetAll);
+
+  function syncFormat() {
+    const meta = FORMAT_META[formatSel.value] || FORMAT_META.text;
+    const isSchema = formatSel.value !== 'text';
+    schemaField.style.display = isSchema ? '' : 'none';
+    formatHint.style.display = isSchema ? '' : 'none';
+    formatHint.textContent = meta.desc;
+  }
+  formatSel.addEventListener('change', syncFormat);
+  tokRange.addEventListener('input', () => { tokVal.textContent = clampTok(tokRange.value); });
+  timeoutRange.addEventListener('input', () => { timeoutVal.textContent = clampTimeout(timeoutRange.value) + ' с'; });
+  maxRoundsRange.addEventListener('input', () => { maxRoundsVal.textContent = clampRounds(maxRoundsRange.value); });
+  ctxThresholdRange.addEventListener('input', () => { ctxThresholdVal.textContent = clampThresholdUi(ctxThresholdRange.value); });
+  ctxKeepRange.addEventListener('input', () => { ctxKeepVal.textContent = clampCtxSize(ctxKeepRange.value); });
+
+  // applyCompressSettings отправляет настройки сжатия на сервер сразу при
+  // изменении (POST /api/compress): новый порог/размер контекста действуют
+  // не дожидаясь следующего сообщения, а достигнутый порог сжимает контекст
+  // немедленно. Вызывается на change (отпускание ползунка, клик по radio),
+  // не на input — чтобы не дёргать модель на каждое деление.
+  async function applyCompressSettings() {
+    try {
+      const resp = await fetch('/api/compress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(compressSettings()),
+      });
+      if (!resp.ok) return; // 409 во время генерации — настройки применит следующий запрос
+      const out = await resp.json();
+      if (out.compressed) {
+        await loadHistory();
+      }
+      void refreshDetails();
+    } catch (err) { /* сеть — обычный чат сообщит об ошибке сам */ }
+  }
+  ctxThresholdRange.addEventListener('change', applyCompressSettings);
+  ctxKeepRange.addEventListener('change', applyCompressSettings);
+  compressOnEl.addEventListener('change', applyCompressSettings);
+  for (const radio of document.querySelectorAll('input[name="compressStrategy"]')) {
+    radio.addEventListener('change', applyCompressSettings);
+  }
+
+  function keySpan(key) {
+    const s = document.createElement('span');
+    s.className = 'jkey';
+    s.textContent = JSON.stringify(key) + ': ';
+    return s;
+  }
+  function valueSpan(value) {
+    const s = document.createElement('span');
+    if (value === null) { s.className = 'jval null'; s.textContent = 'null'; }
+    else if (typeof value === 'string') { s.className = 'jval str'; s.textContent = JSON.stringify(value); }
+    else if (typeof value === 'number') { s.className = 'jval num'; s.textContent = String(value); }
+    else if (typeof value === 'boolean') { s.className = 'jval bool'; s.textContent = String(value); }
+    else { s.className = 'jval'; s.textContent = String(value); }
+    return s;
+  }
+  function jsonNode(key, value) {
+    // primitive → одна строка без сворачивания
+    if (value === null || typeof value !== 'object') {
+      const line = document.createElement('div');
+      line.className = 'jline';
+      const sp = document.createElement('span');
+      sp.className = 'jtoggle-empty';
+      line.appendChild(sp);
+      if (key !== null) line.appendChild(keySpan(key));
+      line.appendChild(valueSpan(value));
+      return line;
+    }
+    const isArr = Array.isArray(value);
+    const entries = isArr ? value : Object.entries(value);
+    if (entries.length === 0) {
+      const line = document.createElement('div');
+      line.className = 'jline';
+      const sp = document.createElement('span');
+      sp.className = 'jtoggle-empty';
+      line.appendChild(sp);
+      if (key !== null) line.appendChild(keySpan(key));
+      const b = document.createElement('span');
+      b.className = 'jbracket';
+      b.textContent = isArr ? '[]' : '{}';
+      line.appendChild(b);
+      return line;
+    }
+    const node = document.createElement('div');
+    node.className = 'jnode';
+    // заголовок узла с шевроном-переключателем
+    const head = document.createElement('div');
+    head.className = 'jline';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'jtoggle';
+    btn.textContent = '▾';
+    btn.setAttribute('aria-label', 'Свернуть/развернуть');
+    btn.title = 'Свернуть/развернуть';
+    head.appendChild(btn);
+    if (key !== null) head.appendChild(keySpan(key));
+    const bOpen = document.createElement('span');
+    bOpen.className = 'jbracket';
+    bOpen.textContent = isArr ? '[' : '{';
+    head.appendChild(bOpen);
+    const dots = document.createElement('span');
+    dots.className = 'jdots';
+    dots.textContent = '…';
+    head.appendChild(dots);
+    node.appendChild(head);
+    // дочерние узлы
+    const body = document.createElement('div');
+    body.className = 'jbody';
+    if (isArr) {
+      for (const v2 of value) body.appendChild(jsonNode(null, v2));
+    } else {
+      for (const [k2, v2] of entries) body.appendChild(jsonNode(k2, v2));
+    }
+    node.appendChild(body);
+    // закрывающая скобка
+    const foot = document.createElement('div');
+    foot.className = 'jfoot';
+    const bClose = document.createElement('span');
+    bClose.className = 'jbracket';
+    bClose.textContent = isArr ? ']' : '}';
+    foot.appendChild(bClose);
+    node.appendChild(foot);
+    btn.addEventListener('click', () => {
+      const closed = node.classList.toggle('closed');
+      btn.textContent = closed ? '▸' : '▾';
+    });
+    return node;
+  }
+  function renderJsonTree(containerEl, raw) {
+    containerEl.innerHTML = '';
+    if (!raw) { containerEl.textContent = '—'; return; }
+    let value;
+    try { value = JSON.parse(raw); }
+    catch (e) { containerEl.textContent = raw; return; }
+    const root = document.createElement('div');
+    root.className = 'json-root';
+    root.appendChild(jsonNode(null, value));
+    containerEl.appendChild(root);
+  }
+  function clearDetails() {
+    reqJsonEl.textContent = '—';
+    errorJsonEl.textContent = '—';
+    errorCollaps.style.display = 'none';
+    compressCollaps.style.display = 'none';
+    stepsListEl.textContent = '—';
+    promptMetaEl.textContent = '—';
+    completionMetaEl.textContent = '—';
+    timeMetaEl.textContent = '—';
+    historyMetaEl.textContent = '—';
+  }
+
+  // Render the interaction steps into the "Шаги" block and the aggregated
+  // token / duration figures below it. Tool executions, compressions and
+  // validations arrive nested in the round that triggered them (st.sub).
+  function renderSteps(steps) {
+    stepsListEl.innerHTML = '';
+    const arr = Array.isArray(steps) ? steps : [];
+    if (arr.length === 0) { stepsListEl.textContent = '—'; return; }
+    arr.forEach((st, i) => {
+      stepsListEl.appendChild(renderStepBlock(st, i + 1));
+      const subs = Array.isArray(st.sub) ? st.sub : [];
+      if (!subs.length) return;
+      const sub = document.createElement('div');
+      sub.className = 'stepsub';
+      subs.forEach(sst => sub.appendChild(renderStepBlock(sst, 0)));
+      stepsListEl.appendChild(sub);
+    });
+  }
+
+  // renderStepBlock строит один блок шага; num > 0 добавляет заголовок
+  // «Шаг N», для вложенных шагов заголовок не нужен.
+  function renderStepBlock(st, num) {
+    const block = document.createElement('div');
+    block.className = 'stepblock';
+    if (num > 0) {
+      const head = document.createElement('div');
+      head.className = 'stephead';
+      head.textContent = 'Шаг ' + num;
+      block.appendChild(head);
+    }
+    if (st.tool) {
+      const body = document.createElement('div');
+      body.className = 'stepbody';
+      const fn = document.createElement('span');
+      fn.className = 'fn';
+      fn.textContent = st.tool;
+      body.appendChild(document.createTextNode('Инструмент: '));
+      body.appendChild(fn);
+      body.appendChild(document.createTextNode(' ' + formatArgs(st.args)));
+      block.appendChild(body);
+      if (st.result) {
+        const res = document.createElement('div');
+        res.className = 'stepresult';
+        res.textContent = 'Результат: ' + st.result;
+        block.appendChild(res);
+      }
+    } else {
+      const body = document.createElement('div');
+      body.className = 'stepbody';
+      body.textContent = st.text || '';
+      block.appendChild(body);
+    }
+    if (st.prompt_tokens || st.completion_tokens) {
+      const tok = document.createElement('div');
+      tok.className = 'steptokens';
+      tok.textContent = 'Токены: запрос ' + (st.prompt_tokens || 0) + ' · ответ ' + (st.completion_tokens || 0);
+      block.appendChild(tok);
+    }
+    return block;
+  }
+
+  // formatArgs turns a JSON tool-arguments object into a compact
+  // key=value listing, e.g. region="Europe/Monaco".
+  function formatArgs(raw) {
+    if (!raw) return '';
+    let v;
+    try { v = JSON.parse(raw); } catch (e) { return raw; }
+    if (v === null || typeof v !== 'object') return raw;
+    return Object.entries(v).map(([k, val]) => k + '=' + JSON.stringify(val)).join(' ');
+  }
+
+  // Последний увиденный compress_seq: сервер увеличивает его при каждом
+  // сжатии, клиент по изменению перерисовывает чат (история меняется на
+  // сервере: старые сообщения заменяются сводкой).
+  let lastCompressSeq = null;
+
+  // ── Память (три слоя) ────────────────────────────────────────────────────
+  const memShortEl = document.getElementById('memShort');
+  const memWorkEl = document.getElementById('memWork');
+  const memCountEl = document.getElementById('memCount');
+  const memListEl = document.getElementById('memList');
+  const memShortTokensEl = document.getElementById('memShortTokens');
+  const memWorkTokensEl = document.getElementById('memWorkTokens');
+  const memLongTokensEl = document.getElementById('memLongTokens');
+  const memLayerShortEl = document.getElementById('memLayerShort');
+  const memLayerWorkingEl = document.getElementById('memLayerWorking');
+  const memLayerLongEl = document.getElementById('memLayerLong');
+  const memTextEl = document.getElementById('memText');
+  const memKindEl = document.getElementById('memKind');
+  const memAddEl = document.getElementById('memAdd');
+  const memKindLabel = { profile: 'Профиль', decision: 'Решение', knowledge: 'Знание' };
+
+  const memValue = (v) => (v && String(v).trim() ? String(v).trim() : 'нет');
+
+  // loadMemory обновляет панель «Память»: что на данный момент сохранено в
+  // каждом из трёх слоёв — краткосрочном, рабочем и долговременном.
+  async function loadMemory() {
+    try {
+      const d = await (await fetch('/api/memory')).json();
+      const items = d.items || [];
+      // Объём каждого слоя в токенах: краткосрочный — фактический размер
+      // контекста ветки, рабочий и долговременный — оценка (~4 байта/токен).
+      const tk = d.tokens || {};
+      const tokLabel = (n, approx) => (n > 0 ? (approx ? '≈' : '') + n + ' токенов' : '0 токенов');
+      memShortTokensEl.textContent = tokLabel(tk.short || 0, false);
+      memWorkTokensEl.textContent = tokLabel(tk.working || 0, true);
+      memLongTokensEl.textContent = tokLabel(tk.long || 0, true);
+      // Тумблеры слоёв: выключенный слой модель не видит, данные остаются.
+      const layers = d.layers || {};
+      const setLayer = (el, on) => {
+        el.checked = on !== false;
+        el.closest('.mem-layer').classList.toggle('off', on === false);
+      };
+      setLayer(memLayerShortEl, layers.short);
+      setLayer(memLayerWorkingEl, layers.working);
+      setLayer(memLayerLongEl, layers.long);
+      // Краткосрочная: сколько реплик активной ветки сейчас в контексте.
+      const sh = d.short || {};
+      memShortEl.textContent = (sh.messages != null && sh.messages > 0
+        ? sh.messages + ' сообщ. в контексте'
+        : 'история диалога пуста — напишите сообщение');
+      // Рабочая: задача, заметки и факты активной ветки.
+      const w = d.working || {};
+      memWorkEl.textContent = 'Задача: ' + memValue(w.task) + '\n'
+        + 'Заметки: ' + memValue(w.notes) + '\n'
+        + 'Факты: ' + memValue(w.facts);
+      // Состояние задачи (конечный автомат): чип над строкой ввода + блок в рабочем слое.
+      renderTaskState(d.task);
+      // Анкетирование нового пользователя (onboarding FSM): чип + блок,
+      // вместе с состоянием тумблера автостарта анкеты.
+      renderOnboardingState(d.onboarding, d.onboarding_on);
+      // Долговременная: записи, сгруппированные по типу.
+      memCountEl.textContent = String(items.length);
+      memListEl.innerHTML = '';
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'mem-empty';
+        empty.textContent = 'Записей пока нет — добавьте через форму выше, или они появятся сами после сжатий.';
+        memListEl.appendChild(empty);
+        return;
+      }
+      for (const kind of ['profile', 'decision', 'knowledge']) {
+        const group = items.filter(it => (it.kind || 'knowledge') === kind);
+        const head = document.createElement('div');
+        head.className = 'mem-group-head';
+        head.textContent = memKindLabel[kind] + ' · ' + group.length;
+        memListEl.appendChild(head);
+        if (!group.length) {
+          const empty = document.createElement('div');
+          empty.className = 'mem-empty';
+          empty.textContent = 'пусто';
+          memListEl.appendChild(empty);
+          continue;
+        }
+        for (const it of group) {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex; align-items:baseline; gap:6px; padding:4px 6px; border:1px solid #e2eaee; border-radius:8px; background:#fff; font-size:12.5px; color:#143a44;';
+          const conf = document.createElement('span');
+          conf.textContent = '×' + (it.confirmations || 1);
+          conf.title = 'Подтверждений (сжатий, где факт подтвердился)';
+          conf.style.cssText = 'flex:none; color:#7fa8b3; font-size:11px;';
+          const text = document.createElement('span');
+          text.textContent = it.text;
+          text.style.cssText = 'flex:1; overflow-wrap:anywhere;';
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.textContent = '×';
+          del.title = 'Забыть';
+          del.style.cssText = 'flex:none; border:none; background:none; color:#a00000; cursor:pointer; font-size:14px; padding:0 4px;';
+          del.addEventListener('click', async () => {
+            await fetch('/api/memory?id=' + encodeURIComponent(it.id), { method: 'DELETE' });
+            await loadMemory();
+          });
+          row.append(conf, text, del);
+          memListEl.appendChild(row);
+        }
+      }
+    } catch (e) { /* сервер недоступен — не критично */ }
+  }
+
+  memAddEl.addEventListener('click', async () => {
+    const text = memTextEl.value.trim();
+    if (!text) return;
+    await fetch('/api/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, kind: memKindEl.value }),
+    });
+    memTextEl.value = '';
+    await loadMemory();
+  });
+  memTextEl.addEventListener('keydown', e => { if (e.key === 'Enter') memAddEl.click(); });
+
+  // ── Инварианты (жёсткие правила вне диалога) ─────────────────────────────
+  const invListEl = document.getElementById('invList');
+  const invLogEl = document.getElementById('invLog');
+  const invTextEl = document.getElementById('invText');
+  const invPatternsEl = document.getElementById('invPatterns');
+  const invAddEl = document.getElementById('invAdd');
+  const invJudgeEl = document.getElementById('invJudge');
+  const invLogTitle = document.getElementById('invLogTitle');
+  const invLogChev = document.getElementById('invLogChev');
+  const invLogHead = document.getElementById('invLogHead');
+  const invCollapsEl = document.getElementById('invCollaps');
+  const invActionLabel = {
+    create: 'создан', update: 'изменён', enable: 'включён',
+    disable: 'выключен', delete: 'удалён',
+  };
+
+  // loadInvariants обновляет панель «Инварианты»: список, тумблеры и журнал
+  // изменений (что → на что → когда). Модель не может менять список — только
+  // эти кнопки и слэш-команды CLI.
+  async function loadInvariants() {
+    try {
+      const d = await (await fetch('/api/invariants')).json();
+      const items = d.invariants || [];
+      invListEl.innerHTML = '';
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'mem-empty';
+        empty.textContent = 'Инвариантов нет — проверка ответов выключена. Добавьте первый ниже.';
+        invListEl.appendChild(empty);
+      }
+      for (const it of items) {
+        const row = document.createElement('div');
+        row.className = 'inv-row' + (it.enabled ? '' : ' off');
+        const text = document.createElement('span');
+        text.className = 'inv-text';
+        text.textContent = it.text + (it.patterns ? '  ·  /' + it.patterns + '/' : '');
+        text.title = it.patterns ? 'Regex-шаблоны детерминированной проверки: ' + it.patterns : 'Без regex-шаблонов — только LLM-судья';
+        const toggle = document.createElement('input');
+        toggle.type = 'checkbox';
+        toggle.checked = !!it.enabled;
+        toggle.title = 'Участвует в проверке ответов';
+        toggle.style.cssText = 'flex:none; accent-color:#0b7285;';
+        toggle.addEventListener('change', async () => {
+          await fetch('/api/invariants', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: it.id, enabled: toggle.checked }),
+          });
+          await loadInvariants();
+        });
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'inv-edit';
+        edit.textContent = 'изм.';
+        edit.title = 'Изменить текст и шаблоны инварианта';
+        edit.addEventListener('click', () => {
+          // Инлайн-редактирование (window.prompt во встроенном браузере
+          // заблокирован): строка превращается в два поля + ✓/✕.
+          row.classList.add('editing');
+          row.innerHTML = '';
+          const tIn = document.createElement('input');
+          tIn.type = 'text';
+          tIn.value = it.text;
+          tIn.placeholder = 'Текст инварианта';
+          tIn.style.cssText = 'flex:1; min-width:0; height:28px; padding:0 8px; border:1px solid #d8e2e6; border-radius:8px; font-size:12.5px; font-family:inherit; box-sizing:border-box;';
+          const pIn = document.createElement('input');
+          pIn.type = 'text';
+          pIn.value = it.patterns || '';
+          pIn.placeholder = 'Regex через | (необязательно)';
+          pIn.style.cssText = 'flex:1; min-width:0; height:28px; padding:0 8px; border:1px solid #d8e2e6; border-radius:8px; font-size:12px; font-family:inherit; box-sizing:border-box;';
+          const ok = document.createElement('button');
+          ok.type = 'button';
+          ok.className = 'inv-edit';
+          ok.textContent = '✓';
+          ok.title = 'Сохранить';
+          const cancel = document.createElement('button');
+          cancel.type = 'button';
+          cancel.className = 'inv-del';
+          cancel.textContent = '✕';
+          cancel.title = 'Отменить правку';
+          ok.addEventListener('click', async () => {
+            const text = tIn.value.trim();
+            if (!text) return;
+            await fetch('/api/invariants', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: it.id, text, patterns: pIn.value.trim() }),
+            });
+            await loadInvariants();
+          });
+          pIn.addEventListener('keydown', e => { if (e.key === 'Enter') ok.click(); });
+          tIn.addEventListener('keydown', e => { if (e.key === 'Enter') pIn.focus(); });
+          cancel.addEventListener('click', () => loadInvariants());
+          row.append(tIn, pIn, ok, cancel);
+          tIn.focus();
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'inv-del';
+        del.textContent = '×';
+        del.title = 'Удалить инвариант';
+        del.addEventListener('click', async () => {
+          if (!confirm('Удалить инвариант #' + it.id + '? (формулировка останется в журнале)')) return;
+          await fetch('/api/invariants?id=' + it.id, { method: 'DELETE' });
+          await loadInvariants();
+        });
+        row.append(text, toggle, edit, del);
+        invListEl.appendChild(row);
+      }
+      // Журнал изменений: что → на что → когда (новые сверху); блок
+      // сворачиваемый, счётчик записей — в заголовке.
+      const logRows = d.log || [];
+      invLogTitle.textContent = 'История изменений' + (logRows.length ? ' · ' + logRows.length : '');
+      invLogEl.innerHTML = '';
+      for (const l of logRows) {
+          const row = document.createElement('div');
+          row.className = 'inv-log-row';
+          const when = new Date(l.at).toLocaleString();
+          const what = invActionLabel[l.action] || l.action;
+          const diff = l.action === 'update' && l.old_value && l.new_value
+            ? ' «' + l.old_value + '» → «' + l.new_value + '»'
+            : (l.new_value ? ' «' + l.new_value + '»' : (l.old_value ? ' «' + l.old_value + '»' : ''));
+          row.textContent = when + ' — ' + what + diff + ' (' + (l.source || '') + ')';
+          invLogEl.appendChild(row);
+      }
+      // Модель судьи: запоминаем текущую и обновляем список опций
+      // (тот же /api/models, что у блока «Модели»).
+      invJudgeEl.dataset.current = d.judge || '';
+      await loadJudgeOptions();
+    } catch (e) { /* сервер недоступен — не критично */ }
+  }
+
+  invAddEl.addEventListener('click', async () => {
+    const text = invTextEl.value.trim();
+    if (!text) return;
+    await fetch('/api/invariants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, patterns: invPatternsEl.value.trim() }),
+    });
+    invTextEl.value = '';
+    invPatternsEl.value = '';
+    await loadInvariants();
+  });
+  invTextEl.addEventListener('keydown', e => { if (e.key === 'Enter') invAddEl.click(); });
+
+  // История изменений инвариантов: сворачиваемый блок; состояние
+  // запоминается в localStorage и восстанавливается при загрузке.
+  const INV_LOG_KEY = 'ai_invlog_open';
+  const setInvLogOpen = open => {
+    invLogEl.style.display = open ? 'block' : 'none';
+    invLogChev.textContent = open ? '▾' : '▸';
+    localStorage.setItem(INV_LOG_KEY, open ? '1' : '0');
+  };
+  setInvLogOpen(localStorage.getItem(INV_LOG_KEY) === '1');
+  invLogHead.addEventListener('click', () => setInvLogOpen(invLogEl.style.display === 'none'));
+
+  // Модель судьи: список — тот же /api/models, что у блока «Модели»
+  // (клики по контактам не мешают: селект живёт в «Настройках»); выбор
+  // отправляется PATCH /api/invariants {judge} — явная команда пользователя.
+  async function loadJudgeOptions() {
+    try {
+      const cur = invJudgeEl.dataset.current || '';
+      const mi = await (await fetch('/api/models')).json();
+      const opts = [...(mi.models || [])];
+      if (mi.reserve_ready && mi.reserve && !opts.includes(mi.reserve)) opts.push(mi.reserve);
+      if (mi.small_ready && mi.small && !opts.includes(mi.small)) opts.push(mi.small);
+      if (cur && !opts.includes(cur)) opts.unshift(cur);
+      invJudgeEl.innerHTML = '';
+      for (const m of opts) {
+        const o = document.createElement('option');
+        o.value = m;
+        o.textContent = m + (m === mi.reserve ? ' · резерв' : (m === mi.small ? ' · small' : ''));
+        invJudgeEl.appendChild(o);
+      }
+      if (cur) invJudgeEl.value = cur;
+    } catch (e) { /* сервер недоступен — не критично */ }
+  }
+  invJudgeEl.addEventListener('change', async () => {
+    await fetch('/api/invariants', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ judge: invJudgeEl.value }),
+    });
+    await loadInvariants();
+  });
+
+  // ── Состояние задачи (конечный автомат) ───────────────────────────────────
+  const TASK_STAGES = ['planning', 'execution', 'validation', 'done'];
+  const taskStateEl = document.getElementById('taskState');
+  const taskStepperEl = document.getElementById('taskStepper');
+  const taskStepInput = document.getElementById('taskStepInput');
+  const taskExpectInput = document.getElementById('taskExpectInput');
+  const taskPlanEl = document.getElementById('taskPlan');
+  const taskCollapsEl = document.getElementById('taskCollaps');
+  const onbStateEl = document.getElementById('onbState');
+  const onbStatusEl = document.getElementById('onbStatus');
+  const onbEnabledEl = document.getElementById('onbEnabled');
+  const taskDoneResetBtn = document.getElementById('taskDoneResetBtn');
+  const onbConfirmBtn = document.getElementById('onbConfirmBtn');
+  const onbSkipBtn = document.getElementById('onbSkipBtn');
+  const onbRestartBtn = document.getElementById('onbRestartBtn');
+  let currentTask = null;
+  // Авто-раскрытие «Задачи» срабатывает один раз, когда появляется состояние
+  // задачи; анкета блок не раскрывает (только чип ❓ над строкой ввода).
+  let taskShown = false;
+
+  // renderTaskChip держит единственный чип состояния задачи в quickbar
+  // (рядом с блобом «Профили»): «⚙ execution · 2/4», клик — блок «Задача и
+  // анкета» в панели «Детали».
+  function renderTaskChip(ts, has) {
+    const bar = document.getElementById('quickbar');
+    let chip = bar.querySelector('.taskchip');
+    if (!has) {
+      if (chip) chip.remove();
+      return;
+    }
+    if (!chip) {
+      chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'taskchip';
+      chip.addEventListener('click', () => {
+        setDetails(true);
+        taskCollapsEl.classList.remove('closed');
+      });
+      bar.prepend(chip);
+    }
+    const plan = (ts && ts.plan) || [];
+    const done = plan.filter(p => p.status === 'done').length;
+    chip.textContent = '⚙ ' + (ts.stage || '…') + (plan.length ? ' · ' + done + '/' + plan.length : '');
+    chip.title = (ts.step ? 'Текущий шаг: ' + ts.step + '\n' : '')
+      + (ts.expect ? 'Ожидаемое действие: ' + ts.expect : '')
+      + '\nКлик — открыть блок «Задачи»';
+  }
+
+  // postOnboarding шлёт действие пользователя (POST /api/onboarding) и
+  // перерисовывает чип и блок анкеты через loadMemory.
+  async function postOnboarding(action) {
+    try {
+      const r = await fetch('/api/onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      if (!r.ok) {
+        let msg = r.status + ' ' + r.statusText;
+        try { msg = (await r.text()) || msg; } catch (e) { /* как есть */ }
+        alert('Анкета: ' + msg);
+      }
+      await loadMemory();
+    } catch (e) { /* сервер недоступен — не критично */ }
+  }
+
+  // renderOnboardingState рисует FSM анкеты из ответа /api/memory: блок в
+  // collaps «Задачи» и чип над строкой ввода. Блок анкеты виден ВСЕГДА
+  // (тумблер должен быть доступен и без активной анкеты), состояние FSM
+  // отражается статусом и кнопками.
+  function renderOnboardingState(onb, onboardingOn) {
+    const has = onb && onb.stage;
+    onbStateEl.hidden = false;
+    if (typeof onboardingOn === 'boolean' && document.activeElement !== onbEnabledEl) {
+      onbEnabledEl.checked = onboardingOn;
+    }
+    renderOnboardingChip(has ? onb : null);
+    if (!has) {
+      onbStatusEl.textContent = 'Анкета для этого чата не запускалась.';
+      onbConfirmBtn.hidden = true;
+      onbSkipBtn.hidden = true;
+      onbRestartBtn.hidden = false;
+      return;
+    }
+    if (!has) return;
+    if (onb.stage === 'interview') {
+      onbStatusEl.textContent = 'Анкета нового пользователя: вопрос ' + ((onb.step || 0) + 1) + ' — модель задаёт вопросы в чате.';
+    } else if (onb.stage === 'confirm') {
+      onbStatusEl.textContent = 'Анкета нового пользователя: подтверждение собранного профиля.';
+    } else {
+      onbStatusEl.textContent = 'Анкета завершена (этап done).';
+    }
+    onbConfirmBtn.hidden = onb.stage !== 'confirm';
+    onbSkipBtn.hidden = onb.stage === 'done';
+    onbRestartBtn.hidden = onb.stage !== 'done';
+  }
+
+  // renderOnboardingChip держит чип анкетирования в quickbar (рядом с чипом
+  // задачи): «❓ Анкета: вопрос 2», клик — блок «Задачи».
+  function renderOnboardingChip(onb) {
+    const bar = document.getElementById('quickbar');
+    let chip = bar.querySelector('.onbchip');
+    const has = onb && (onb.stage === 'interview' || onb.stage === 'confirm');
+    if (!has) {
+      if (chip) chip.remove();
+      return;
+    }
+    if (!chip) {
+      chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'onbchip';
+      chip.addEventListener('click', () => {
+        setDetails(true);
+        taskCollapsEl.classList.remove('closed');
+      });
+      bar.prepend(chip);
+    }
+    chip.textContent = '❓ Анкета: ' + (onb.stage === 'confirm' ? 'подтверждение' : 'вопрос ' + ((onb.step || 0) + 1));
+    chip.title = 'Идёт анкетирование нового пользователя\nКлик — открыть блок «Задачи»';
+  }
+
+  // Тумблер автостарта анкеты: вкл — анкета запускается для нового чата
+  // (как раньше), выкл — не запускается (запустить вручную — «Пройти заново»).
+  onbEnabledEl.addEventListener('change', async () => {
+    try {
+      const r = await fetch('/api/onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: onbEnabledEl.checked ? 'enable' : 'disable' }),
+      });
+      if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+      await loadMemory();
+    } catch (e) {
+      addError('Анкета: ' + (e.message || e));
+      onbEnabledEl.checked = !onbEnabledEl.checked;
+    }
+  });
+
+  onbSkipBtn.addEventListener('click', () => {
+    if (window.confirm('Пропустить всю анкету? Собранные ответы сохранятся в памяти.')) postOnboarding('skip');
+  });
+  onbConfirmBtn.addEventListener('click', () => postOnboarding('confirm'));
+  onbRestartBtn.addEventListener('click', () => postOnboarding('restart'));
+
+  function renderTaskPlan(plan) {
+    taskPlanEl.innerHTML = '';
+    plan.forEach((st, i) => {
+      const row = document.createElement('div');
+      row.className = 'task-plan-row';
+      const mark = { pending: '○', active: '●', done: '✓' }[st.status] || '○';
+      const color = { pending: '#7fa8b3', active: '#d9822b', done: '#2e7f8f' }[st.status] || '#7fa8b3';
+      const m = document.createElement('span');
+      m.className = 'mark';
+      m.textContent = mark;
+      m.style.color = color;
+      m.title = 'Статус: ' + st.status + ' (меняется моделью в диалоге)';
+      const t = document.createElement('span');
+      t.textContent = (i + 1) + ') ' + st.title;
+      t.style.cssText = 'flex:1; overflow-wrap:anywhere;'
+        + (st.status === 'done' ? ' text-decoration:line-through; color:#7fa8b3;' : '');
+      row.append(m, t);
+      taskPlanEl.appendChild(row);
+    });
+  }
+
+  // renderTaskState рисует FSM из ответа /api/memory или /api/task:
+  // блок в collaps «Задачи» и чип над строкой ввода.
+  function renderTaskState(ts) {
+    currentTask = ts || null;
+    const has = ts && (ts.stage || ts.step || ts.expect || (ts.plan || []).length);
+    taskStateEl.hidden = !has;
+    if (has && !taskShown) taskCollapsEl.classList.remove('closed');
+    taskShown = has;
+    renderTaskChip(ts, has);
+    if (!has) return;
+    // Завершённая задача остаётся записью об истории; пользователь может
+    // убрать её из панели сам (reset) — без просьбы к модели.
+    taskDoneResetBtn.hidden = ts.stage !== 'done';
+    taskStepperEl.innerHTML = '';
+    for (const st of TASK_STAGES) {
+      // Этапы — только индикация актуального статуса: переключение
+      // недопустимо со стороны пользователя, этап меняет модель в диалоге.
+      const b = document.createElement('span');
+      b.className = 'task-stage';
+      b.textContent = st;
+      if (st === ts.stage) {
+        b.classList.add('current');
+        b.title = 'Актуальный этап';
+      } else {
+        b.title = 'Этап меняет модель в диалоге (task_state)';
+      }
+      taskStepperEl.appendChild(b);
+    }
+    if (taskStepInput.value !== (ts.step || '')) taskStepInput.value = ts.step || '';
+    if (taskExpectInput.value !== (ts.expect || '')) taskExpectInput.value = ts.expect || '';
+    renderTaskPlan(ts.plan || []);
+  }
+
+  // «Убрать из деталей»: прямой reset завершённой задачи тем же строгим
+  // правилом, что и у модели (POST /api/task stage=reset) — без раунда
+  // диалога. FSM удаляется из рабочей памяти, блок и чип исчезают.
+  taskDoneResetBtn.addEventListener('click', async () => {
+    try {
+      const r = await fetch('/api/task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: 'reset' }),
+      });
+      if (!r.ok) throw new Error((await r.text()) || (r.status + ' ' + r.statusText));
+      await loadMemory();
+    } catch (e) {
+      addError('Задача: ' + (e.message || e));
+    }
+  });
+
+  // Поля «Текущий шаг»/«Ожидаемое действие» — read-only дисплей: их меняет
+  // модель инструментом task_state, пользовательский ввод не предусмотрен.
+
+  async function refreshDetails(showErr = true) {
+    try {
+      const d = await (await fetch('/api/debug')).json();
+      renderJsonTree(reqJsonEl, d.request);
+      renderSteps(d.steps);
+      if (d.prompt_tokens > 0) promptMetaEl.textContent = String(d.prompt_tokens);
+      else promptMetaEl.textContent = '—';
+      if (d.completion_tokens > 0) completionMetaEl.textContent = String(d.completion_tokens);
+      else completionMetaEl.textContent = '—';
+      // Блок «Сжатие» — по последнему сжатию (Summary или Sticky Facts);
+      // Sliding Window тоже попадает сюда, но без токенов и сводки.
+      if (d.last_compress) renderCompressDetails(d.last_compress);
+      else compressCollaps.style.display = 'none';
+      // Сжатие меняет историю на сервере — перерисовать чат с маркерами.
+      // Но не посреди стрима: перерисовка заменяет лог целиком и отвязывает
+      // стримящийся пузырь от DOM (ответ терялся из вида до обновления
+      // страницы). Прогон сам перерисовывает чат из истории после
+      // завершения, а сжатие посреди прогона рисуется на месте.
+      if (d.compress_seq != null) {
+        if (lastCompressSeq !== null && d.compress_seq !== lastCompressSeq) await loadHistory();
+        lastCompressSeq = d.compress_seq;
+      }
+      if (d.time_ms != null) {
+        const ms = Math.max(0, Math.round(d.time_ms));
+        timeMetaEl.textContent = ms >= 1000 ? (ms / 1000).toFixed(1) + ' с' : ms + ' мс';
+      } else {
+        timeMetaEl.textContent = '—';
+      }
+      // Размер истории ведёт и хранит сервер (файл истории модели):
+      // подтягивается при старте, обновляется с каждым ответом и сбрасывается
+      // при удалении контекста.
+      if (d.history_tokens != null) {
+        historyMetaEl.textContent = String(d.history_tokens);
+      } else {
+        historyMetaEl.textContent = '—';
+      }
+      // Блок «Ошибка» показываем только после реальной ошибки в текущей
+      // сессии: при загрузке страницы/смене модели серверный detail —
+      // затёртый прошлым запуском — не должен выглядеть как свежая ошибка.
+      // Блокировка инвариантом сюда тоже попадает (type=invariant_violation,
+      // content — черновик до замены на отказ).
+      const detail = d.detail || null;
+      if (showErr) {
+        if (detail) {
+          renderJsonTree(errorJsonEl, JSON.stringify(detail));
+          errorCollaps.style.display = '';
+        } else {
+          errorCollaps.style.display = 'none';
+        }
+      }
+      // Слой памяти: размер хранилища и актуальный список записей.
+      if (d.memory_count != null) memCountEl.textContent = String(d.memory_count);
+      await loadMemory();
+      return detail;
+    } catch (e) { /* сервер недоступен — не критично */ return undefined; }
+  }
+
+  // loadHistory fetches /api/history and renders every stored turn into the log
+  // (dimmed, grouped by day, with hh:MM timestamps). Reused on page load and
+  // after switching the active model, so each agent shows its own context.
+  async function loadHistory() {
+    const data = await (await fetch('/api/history')).json();
+    if (data.messages && data.messages.length) {
+      // Затемняем («архивный контекст») только сообщения ВЫШЕ последней
+      // плашки сжатия; реплики после неё — активный контекст, они не
+      // должны выглядеть погашенными ни после прогона, ни после reload.
+      let lastMarkerIdx = -1;
+      data.messages.forEach((mm, mi) => {
+        if (mm.role === 'marker' || mm.role === 'summary') lastMarkerIdx = mi;
+      });
+      log.innerHTML = '';
+      let lastKey = null;
+      curDayKey = null;
+      data.messages.forEach((m, mi) => {
+        if (m.role === 'marker' || m.role === 'summary') {
+          // Псевдо-запись сжатия: на её месте — сводка свёрнутых сообщений.
+          // Показываем плашкой, чтобы свёрнутая часть не выглядела пропавшей.
+          addFoldMark(m.role === 'summary' ? 'Сжатый контекст' : 'Сжатие контекста', m.content);
+          // Если точка ветвления свёрнута сжатием, её переключатель веток
+          // переносится сервером сюда — рисуем пилюлю после плашки.
+          if (m.alts && m.alts.length > 1) addAltBar(null, m.alts, data.active);
+          return;
+        }
+        const d = new Date(m.at);
+        const key = dayKey(d);
+        if (key !== lastKey) {
+          addDivider(dayLabel(d));
+          lastKey = key;
+          curDayKey = key;
+        }
+        const b = addRow(m.role === 'user' ? 'user' : 'ai', m.content,
+          { at: d, dim: mi < lastMarkerIdx, id: m.id, alts: m.alts, active: data.active });
+        // AI-ответ, представляющий собой валидный JSON-объект/массив, рисуем деревом
+        if (m.role === 'assistant') {
+          // Отказ по инварианту: текст оставляем целиком (включая первую
+          // строку с 🛡 — emoji вне BMP, slice(1) ломает суррогатную пару),
+          // плашка-метка идёт после текста.
+          if (m.content.trimStart().startsWith('🛡')) {
+            b.classList.add('inv-refused');
+            b.textContent = '';
+            const txt = document.createElement('div');
+            txt.className = 'md';
+            txt.innerHTML = renderMarkdown(m.content.trimStart());
+            b.appendChild(txt);
+            const badge = document.createElement('span');
+            badge.className = 'inv-badge';
+            badge.textContent = '🛡 Отказ по инварианту';
+            b.appendChild(badge);
+          } else if (!m.content.trim()) {
+            // Пустой ответ модели — не прячем: видимая заглушка объясняет
+            // «пропавший» ответ и держит под собой пилюлю версий.
+            b.classList.add('empty-answer');
+            b.textContent = 'пустой ответ модели';
+          } else {
+          const c = m.content.trimStart();
+          let isJson = false;
+          if (c[0] === '{' || c[0] === '[') {
+            try {
+              const v = JSON.parse(m.content);
+              if (v && typeof v === 'object') { renderJsonTree(b, m.content); isJson = true; }
+            } catch (e) { /* не JSON — оставляем текстом */ }
+          }
+          if (!isJson) {
+            b.classList.add('md');
+            b.innerHTML = renderMarkdown(m.content);
+          }
+          }
+        }
+      });
+    } else {
+      log.innerHTML = '';
+      log.appendChild(todayDivider);
+      curDayKey = null;
+    }
+    return data;
+  }
+
+
+  (async function init() {
+    try {
+      const info = await (await fetch('/api/info')).json();
+      document.title = 'AI Чат — ' + info.model;
+      statusEl.textContent = info.model;
+      // при открытии/обновлении ограничение токенов — по максимуму
+      tokRange.value = tokRange.max;
+      tokVal.textContent = tokRange.max;
+      void loadTabs();
+      void loadProfiles();
+      void loadInvariants();
+      const data = await loadHistory();
+      await loadContacts();
+      syncFormat();
+      clearDetails();
+      // Подтянуть сохранённый итог токенов контекста из файла истории.
+      void refreshDetails(false);
+      menuBtn.classList.add('active');
+      detailsToggle.classList.add('active');
+    } catch (err) {
+      statusEl.textContent = 'нет связи с сервером';
+    }
+  })();
+
+  send.addEventListener('click', sendMessage);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) sendMessage();
+  });
+
+  // === Вкладки чатов: несколько чатов, у каждого свой контекст. Модель —
+  // на вкладку: при переключении вкладки сообщения и контекст сохраняются.
+  let tabsData = { tabs: [], active: null };
+
+  async function apiTabs() {
+    return (await fetch('/api/tabs')).json();
+  }
+
+  async function apiTabCall(action, body) {
+    const resp = await fetch('/api/tab', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ action }, body || {})),
+    });
+    const raw = await resp.text();
+    let data = {};
+    try { data = JSON.parse(raw); } catch (e) { /* текстовая ошибка */ }
+    if (!resp.ok) throw new Error(data.error || raw.trim() || ('HTTP ' + resp.status));
+    return data;
+  }
+
+  function renderTabs() {
+    const wrap = document.getElementById('tabs');
+    wrap.innerHTML = '';
+    for (const t of tabsData.tabs) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tab' + (t.id === tabsData.active ? ' active' : '');
+      b.title = t.title + ' — ' + t.model;
+      const tt = document.createElement('span');
+      tt.className = 'tab-title';
+      tt.textContent = t.title;
+      b.appendChild(tt);
+      if (tabsData.tabs.length > 1) {
+        // Закрыть можно любую, кроме единственной — сервер тоже вернёт 400.
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.className = 'tab-close';
+        x.textContent = '×';
+        x.title = 'Закрыть вкладку';
+        x.addEventListener('click', (e) => { e.stopPropagation(); void deleteTab(t.id); });
+        b.appendChild(x);
+      }
+      b.addEventListener('click', () => void selectTab(t.id));
+      wrap.appendChild(b);
+    }
+  }
+
+  async function loadTabs() {
+    tabsData = await apiTabs();
+    renderTabs();
+  }
+
+  // Штатный верх после смены вкладки: модель активной вкладки в шапке,
+  // подсветка контактов и заголовок вкладки браузера.
+  function syncTabChrome() {
+    const t = tabsData.tabs.find((x) => x.id === tabsData.active);
+    if (!t) return;
+    statusEl.textContent = t.model;
+    highlightContacts(t.model);
+    document.title = 'AI Чат — ' + t.model;
+  }
+
+  // afterTabChange — полная перерисовка интерфейса под новую активную
+  // вкладку: список вкладок, шапка, история (контекст уже переключён).
+  async function afterTabChange() {
+    tabsData = await apiTabs();
+    renderTabs();
+    syncTabChrome();
+    await loadHistory();
+    clearDetails();
+    void refreshDetails(false);
+  }
+
+  async function selectTab(id) {
+    if (id === tabsData.active || send.disabled) return;
+    try {
+      await apiTabCall('select', { session: id });
+    } catch (err) {
+      addError(err.message || err);
+      return;
+    }
+    tabsData.active = id;
+    renderTabs();
+    try {
+      await afterTabChange();
+    } catch (err) {
+      addError(err.message || err);
+    }
+  }
+
+  async function newTab() {
+    if (send.disabled) return;
+    try {
+      const data = await apiTabCall('new');
+      tabsData.active = data.id;
+      renderTabs();
+      await afterTabChange();
+    } catch (err) {
+      addError(err.message || err);
+    }
+  }
+
+  async function deleteTab(id) {
+    if (tabsData.tabs.length <= 1 || send.disabled) return;
+    const resp = await fetch('/api/tab?session=' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!resp.ok) {
+      const raw = (await resp.text()).trim();
+      addError(raw || ('HTTP ' + resp.status));
+      return;
+    }
+    try {
+      await afterTabChange();
+    } catch (err) {
+      addError(err.message || err);
+    }
+  }
+
+  document.getElementById('tabNew').addEventListener('click', newTab);
+
+  // === Блобы-профили: цветной блоб показывает только имя; клик отправляет
+  // самопрезентацию профиля (текст из тестового файла) как обычное сообщение
+  // в текущей вкладке. Цвета — приглушённые оттенки в общей бирюзовой гамме
+  // приложения (точки-маркеры пунктов меню «Профили»).
+  const PROFILE_COLORS = ['#2e7f8f', '#1f6372', '#4b6a74', '#5a8790'];
+
+  async function loadProfiles() {
+    let data;
+    try {
+      data = await (await fetch('/api/profiles')).json();
+    } catch (err) {
+      return;
+    }
+    const list = data.profiles || [];
+    const wrap = document.getElementById('profWrap');
+    const menu = document.getElementById('profMenu');
+    // Единый блоб «Профили»: пункты меню — существующие варианты; клик
+    // отправляет самопрезентацию профиля как обычное сообщение (sendWithText).
+    menu.innerHTML = '';
+    list.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'plus-item';
+      b.title = p.intro;
+      const dot = document.createElement('span');
+      dot.style.cssText = 'display:inline-block; width:8px; height:8px; border-radius:50%; background:'
+        + PROFILE_COLORS[i % PROFILE_COLORS.length] + '; margin-right:8px; vertical-align:middle;';
+      b.append(dot, document.createTextNode(p.name));
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        menu.hidden = true;
+        sendWithText(p.intro);
+      });
+      menu.appendChild(b);
+    });
+    wrap.hidden = !list.length;
+  }
+
+  // === Контакты: список моделей сервера для панели переключения.
+  async function loadContacts() {
+    const mi = await (await fetch('/api/models')).json();
+    renderContacts(mi.models, mi.current, { model: mi.reserve, ready: mi.reserve_ready, small: { model: mi.small, ready: mi.small_ready } });
+  }
+
+  // Кнопка "+" у поля ввода: всплывающее меню — клик по кнопке переключает,
+  // клик вне меню и Escape закрывают. Кнопка корзины имеет контекстное меню
+  // с двумя уровнями удаления.
+  const attachBtn = document.getElementById('attach');
+  const plusMenu = document.getElementById('plusMenu');
+  const delMenu = document.getElementById('delMenu');
+  // Блоб «Профили» живёт в том же меню-механизме: клик открывает список
+  // вариантов, клик вне и Escape закрывают (общая логика ниже).
+  const profBtn = document.getElementById('profBtn');
+  const profMenu = document.getElementById('profMenu');
+  const menus = [
+    { btn: attachBtn, menu: plusMenu },
+    { btn: delChatBtn, menu: delMenu },
+    { btn: profBtn, menu: profMenu },
+  ];
+  const closeMenus = (except) => {
+    for (const m of menus) {
+      if (m.menu !== except) m.menu.hidden = true;
+    }
+  };
+  for (const { btn, menu } of menus) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMenus(menu);
+      menu.hidden = !menu.hidden;
+    });
+  }
+  // Меню «+»: готовые вопросы — клик отправляет вопрос обычным сообщением
+  // в текущей вкладке (тот же sendWithText, что и у блобов-профилей) и
+  // закрывает меню.
+  for (const item of plusMenu.querySelectorAll('.plus-item')) {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      plusMenu.hidden = true;
+      sendWithText(item.textContent.trim());
+    });
+  }
+  document.addEventListener('click', (e) => {
+    for (const { menu } of menus) {
+      if (menu.hidden || menu.contains(e.target)) continue;
+      menu.hidden = true;
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenus();
+  });
+
+  // Корзина в шапке: контекстное меню — все пункты применяются к ТЕКУЩЕЙ
+  // открытой вкладке: «Удалить чат» (сообщения и краткосрочная память,
+  // рабочая сохраняется), «Удалить историю» (краткосрочная и рабочая) и
+  // «Удалить все» (все уровни памяти этой вкладки, включая долговременную —
+  // с подтверждением).
+  document.getElementById('delChatItem').addEventListener('click', () => {
+    delMenu.hidden = true;
+    void deleteDialog('chat');
+  });
+  document.getElementById('delHistoryItem').addEventListener('click', () => {
+    delMenu.hidden = true;
+    void deleteDialog('history');
+  });
+  document.getElementById('delAllItem').addEventListener('click', () => {
+    delMenu.hidden = true;
+    if (!confirm('Удалить весь контекст ТЕКУЩЕЙ вкладки: чат, краткосрочную, рабочую и долговременную память этой вкладки?')) return;
+    void deleteDialog('all');
+  });
+
+  // Тумблеры слоёв в блоках «Память»: выключенный слой не отправляется
+  // модели (как будто его нет), данные при этом полностью сохраняются.
+  for (const [el, key] of [[memLayerShortEl, 'short'], [memLayerWorkingEl, 'working'], [memLayerLongEl, 'long']]) {
+    el.addEventListener('change', async () => {
+      el.closest('.mem-layer').classList.toggle('off', !el.checked);
+      try {
+        await fetch('/api/memory/layers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [key]: el.checked }),
+        });
+      } catch (err) {
+        addError(err.message || err);
+        return;
+      }
+      void refreshDetails();
+    });
+  }
+
+  // Меню «+»: пока пусто — пункты будут добавляться позже.
+</script>
+</body>
+</html>
