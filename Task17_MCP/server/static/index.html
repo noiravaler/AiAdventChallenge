@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit MCP — статус</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #0f1117; color: #d7dae0; margin: 0; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #8a919d; font-size: 13px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .card { background: #171a23; border: 1px solid #262b38; border-radius: 10px; padding: 14px 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #8a919d; margin: 0 0 10px; }
+  .ok { color: #7dd487; } .down { color: #ef7c7c; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #222836; font-size: 12px; margin: 2px 4px 2px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td, th { text-align: left; padding: 5px 6px; border-bottom: 1px solid #222836; vertical-align: top; }
+  th { color: #8a919d; font-weight: 500; }
+  code { background: #222836; padding: 1px 6px; border-radius: 6px; font-size: 12px; }
+  .muted { color: #8a919d; }
+  button { background: #2b5bd7; border: 0; color: #fff; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #3a6ae5; }
+</style>
+</head>
+<body>
+<h1>🪐 Orbit MCP</h1>
+<div class="sub">MCP-сервер натальных карт и гороскопов · MCP: <code>/mcp</code> (Streamable HTTP)</div>
+<div style="margin-bottom:16px"><button onclick="load()">⟳ Обновить</button> <span class="muted" id="when"></span></div>
+<div class="grid" id="root"><div class="card">Загрузка…</div></div>
+
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function load() {
+  try {
+    const data = await (await fetch("/api/status")).json();
+    const st = data.status || {};
+    const prov = st.providers || {};
+    const cards = [];
+
+    let provRows = "";
+    for (const [k, p] of Object.entries(prov)) {
+      const ok = p.status === "ok";
+      provRows += `<tr><th>${esc(k)}</th><td class="${ok ? "ok" : "down"}">${ok ? "● " : "⚠ "}${esc(p.status)}${p.error ? " — " + esc(p.error) : ""}</td><td class="muted">${esc(p.comment || p.url || "")}</td></tr>`;
+    }
+    cards.push(`<div class="card"><h2>Провайдеры</h2><table>${provRows}</table></div>`);
+
+    const tools = (data.tools || []).map(t =>
+      `<tr><th><code>${esc(t.name)}</code></th><td>${esc(t.description)}</td></tr>`).join("");
+    cards.push(`<div class="card"><h2>Инструменты MCP (${(data.tools||[]).length})</h2><table>${tools}</table></div>`);
+
+    const charts = (data.charts || []).map(c =>
+      `<tr><th>${esc(c.name)}</th><td>${esc(c.birth)}</td></tr>`).join("") || `<tr><td class="muted">карт пока нет — вызовите natal_build_chart в чате</td></tr>`;
+    cards.push(`<div class="card"><h2>Натальные карты</h2><table>${charts}</table><div class="muted" style="margin-top:8px">файл: <code>${esc(st.store_file)}</code></div></div>`);
+
+    const renders = data.renders || [];
+    let gal = "";
+    for (const r of renders) {
+      gal += `<figure style="margin:8px 0"><a href="${esc(r.url)}" target="_blank"><img src="${esc(r.url)}" alt="${esc(r.file)}" loading="lazy" style="max-width:100%;border-radius:8px;border:1px solid #262b38"></a><figcaption class="muted" style="font-size:12px;margin-top:4px">${esc(String(r.file).split("/").pop())}</figcaption></figure>`;
+    }
+    if (!gal) gal = `<div class="muted">рендеров пока нет — вызовите chart_render в чате</div>`;
+    cards.push(`<div class="card"><h2>Отрисованные карты (${renders.length})</h2>${gal}</div>`);
+
+    document.getElementById("root").innerHTML = cards.join("");
+    document.getElementById("when").textContent = "обновлено " + new Date().toLocaleTimeString("ru-RU");
+  } catch (e) {
+    document.getElementById("root").innerHTML = `<div class="card down">Ошибка: ${esc(e.message)}</div>`;
+  }
+}
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# персональные данные натальных карт не попадают в репозиторий
+orbit-charts.json
+orbit-charts.json.tmp
+
+.env
+bin/
+charts/
