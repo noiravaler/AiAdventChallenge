@@ -10,6 +10,10 @@
 .chat-history.json
 history/
 
+# Состояние планировщика фоновых задач (SQLite + WAL/SHM, Task18)
+scheduler.db*
+scheduler.json
+
 # Артефакты сборки
 bin/
 *.test

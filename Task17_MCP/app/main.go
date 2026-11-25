@@ -44,6 +44,17 @@ func main() {
 	} else {
 		log.Printf("хранилище карт не загружено (%v) — стартуем пустым", err)
 	}
+	if jr, err := orbit.NewJournal(cfg.JournalFile); err == nil {
+		svc = svc.WithJournal(jr)
+	} else {
+		log.Printf("дневник наблюдений не загружен (%v) — стартуем пустым", err)
+	}
+	if ps, err := orbit.NewPulseStore(cfg.PulseDB); err == nil {
+		svc = svc.WithPulse(ps)
+		defer ps.Close()
+	} else {
+		log.Printf("база пульса не открыта (%v) — пульс недоступен", err)
+	}
 	tk := orbit.NewToolkit(svc)
 	eng := newEngineSupervisor(cfg)
 

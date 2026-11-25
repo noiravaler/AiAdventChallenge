@@ -31,3 +31,18 @@ probe-natal:
 
 probe-vibe:
 	go run ./app -probe vibe_today -args '{"city":"Казань"}'
+
+probe-affirmation:
+	go run ./app -probe daily_affirmation
+
+probe-journal-capture:
+	go run ./app -probe journal_capture
+
+probe-journal-summary:
+	go run ./app -probe journal_summary -args '{"days":7}'
+
+probe-pulse-capture:
+	go run ./app -probe pulse_capture
+
+probe-pulse-summary:
+	go run ./app -probe pulse_summary -args '{"hours":24}'

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"ai-chat-go/affirmations"
 	"ai-chat-go/astrologer"
 	"ai-chat-go/config"
 	"ai-chat-go/openmeteo"
@@ -25,7 +27,10 @@ type Service struct {
 	Astro   *astrologer.Client
 	Geo     *openmeteo.GeoClient
 	Weather *openmeteo.WeatherClient
+	Affirm  *affirmations.Client
 	Store   *Store
+	Journal *Journal
+	Pulse   *PulseStore
 	Cache   *Cache
 	Now     func() time.Time // для тестов; nil → time.Now
 
@@ -40,6 +45,7 @@ func New(cfg *config.Config) *Service {
 		Astro:     astrologer.New(cfg.AstroURL, cfg.AstroVersion, cfg.AstroKey, cfg.AstroTimeout),
 		Geo:       openmeteo.NewGeoClient(cfg.GeoURL, cfg.GeoTimeout),
 		Weather:   openmeteo.NewWeatherClient(cfg.OpenMeteoURL, cfg.OpenMeteoTimeout),
+		Affirm:    affirmations.New(cfg.AffirmURL, cfg.TranslateURL, cfg.AffirmTimeout),
 		Store:     &Store{},
 		Cache:     NewCache(),
 		Now:       time.Now,
@@ -50,6 +56,18 @@ func New(cfg *config.Config) *Service {
 // WithStore подменяет хранилище (тесты, нестандартный путь).
 func (s *Service) WithStore(st *Store) *Service {
 	s.Store = st
+	return s
+}
+
+// WithJournal подменяет дневник наблюдений (тесты, нестандартный путь).
+func (s *Service) WithJournal(j *Journal) *Service {
+	s.Journal = j
+	return s
+}
+
+// WithPulse подменяет накопитель пульса (тесты, нестандартный путь).
+func (s *Service) WithPulse(p *PulseStore) *Service {
+	s.Pulse = p
 	return s
 }
 
@@ -107,6 +125,19 @@ type RenderArgs struct {
 	Theme  string  `json:"theme,omitempty" jsonschema:"тема: classic (по умолчанию), dark, light, strawberry"`
 	Style  string  `json:"style,omitempty" jsonschema:"стиль колеса: classic или modern"`
 	Title  string  `json:"title,omitempty" jsonschema:"заголовок на карте (до 40 символов)"`
+}
+
+// JournalArgs — инструменты дневника (journal_capture/journal_read/journal_summary).
+type JournalArgs struct {
+	City string `json:"city,omitempty" jsonschema:"город снимка (только journal_capture); пусто — город последней карты"`
+	Days *int   `json:"days,omitempty" jsonschema:"период в днях, 1–365 (только journal_read/journal_summary; по умолчанию 7)"`
+}
+
+// PulseArgs — инструменты пульса (pulse_capture/pulse_read/pulse_summary).
+type PulseArgs struct {
+	City    string `json:"city,omitempty" jsonschema:"город снимка (только pulse_capture); пусто — город последней карты"`
+	Minutes *int   `json:"minutes,omitempty" jsonschema:"окно чтения в минутах, 1–1440 (только pulse_read; по умолчанию 60)"`
+	Hours   *int   `json:"hours,omitempty" jsonschema:"окно отчёта в часах, 1–720 (только pulse_summary; по умолчанию 24)"`
 }
 
 // ---------- Вспомогательные ----------
@@ -700,6 +731,205 @@ func (s *Service) RenderedCharts() []map[string]any {
 	return out
 }
 
+// Affirmation — аффирмация дня с affirmations.dev: оригинал (en) и перевод
+// на русский. Сбой переводчика не роняет инструмент — вернётся оригинал.
+func (s *Service) Affirmation(ctx context.Context) (affirmations.Result, error) {
+	return s.Affirm.Russian(ctx)
+}
+
+// ---------- Дневник наблюдений ----------
+
+// requireJournal возвращает накопитель или ошибку, если он не настроен.
+func (s *Service) requireJournal() (*Journal, error) {
+	if s.Journal == nil {
+		return nil, fmt.Errorf("журнал не настроен (ORBIT_JOURNAL_FILE)")
+	}
+	return s.Journal, nil
+}
+
+// JournalCapture — снимок дня: собирает погоду, Луну, тесные транзиты и
+// аффирмацию (переиспользуя vibe_today) и сохраняет запись за сегодня.
+// Повторный вызов за тот же день перезаписывает запись (идемпотентно).
+func (s *Service) JournalCapture(ctx context.Context, in JournalArgs) (map[string]any, error) {
+	j, err := s.requireJournal()
+	if err != nil {
+		return nil, err
+	}
+	vibe, err := s.VibeToday(ctx, VibeArgs{City: in.City})
+	if err != nil {
+		return nil, err
+	}
+	entry := &JournalEntry{
+		Date:       str(vibe["date"]),
+		City:       str(vibe["city"]),
+		CapturedAt: s.now(),
+	}
+	if entry.Date == "" {
+		return nil, fmt.Errorf("vibe_today не вернул дату снимка")
+	}
+	if w, ok := vibe["weather"].(openmeteo.Weather); ok {
+		temp, tempMax, tempMin, prob := w.Temperature, w.TempMax, w.TempMin, w.PrecipProb
+		entry.Temp, entry.TempMax, entry.TempMin, entry.PrecipProb = &temp, &tempMax, &tempMin, &prob
+		entry.Weather = w.Description
+	}
+	if m, ok := vibe["moon"].(map[string]any); ok {
+		entry.MoonPhase = str(m["name"])
+		entry.MoonSign = str(m["moon_sign"])
+	}
+	if tr, ok := vibe["transits"].(map[string]any); ok {
+		entry.Chart = str(tr["chart"])
+		if aspects, ok := tr["aspects"].([]Aspect); ok {
+			entry.Transits = aspects
+		}
+	}
+	if res, aerr := s.Affirm.Russian(ctx); aerr == nil {
+		entry.Affirmation, entry.Emoji = res.Affirmation, res.Emoji
+	}
+	if err := j.Upsert(entry); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"saved":           true,
+		"date":            entry.Date,
+		"city":            entry.City,
+		"weather":         entry.Weather,
+		"temp":            entry.Temp,
+		"moon_phase":      entry.MoonPhase,
+		"transits":        len(entry.Transits),
+		"chart":           entry.Chart,
+		"affirmation":     entry.Affirmation,
+		"emoji":           entry.Emoji,
+		"journal_entries": j.Count(),
+	}, nil
+}
+
+// JournalRead — сырые записи дневника за период.
+func (s *Service) JournalRead(_ context.Context, in JournalArgs) (map[string]any, error) {
+	j, err := s.requireJournal()
+	if err != nil {
+		return nil, err
+	}
+	days := daysArg(in.Days)
+	entries := j.Since(days, s.now().Format("2006-01-02"))
+	return map[string]any{
+		"days":    days,
+		"count":   len(entries),
+		"entries": entries,
+	}, nil
+}
+
+// JournalSummary — агрегированный отчёт по дневнику за период.
+func (s *Service) JournalSummary(_ context.Context, in JournalArgs) (map[string]any, error) {
+	j, err := s.requireJournal()
+	if err != nil {
+		return nil, err
+	}
+	days := daysArg(in.Days)
+	today := s.now().Format("2006-01-02")
+	return Summarize(j.Since(days, today), days, today), nil
+}
+
+// ---------- Пульс неба (частые снимки, SQLite) ----------
+
+// requirePulse возвращает накопитель или ошибку, если он не настроен.
+func (s *Service) requirePulse() (*PulseStore, error) {
+	if s.Pulse == nil {
+		return nil, fmt.Errorf("пульс не настроен (ORBIT_PULSE_DB)")
+	}
+	return s.Pulse, nil
+}
+
+// PulseCapture — минутный снимок неба: Луна, самый тесный транзит и
+// температура (из кэша погоды). Лёгкий и идемпотентный в пределах минуты —
+// предназначен для частых вызовов планировщиком (хоть каждую минуту).
+func (s *Service) PulseCapture(ctx context.Context, in PulseArgs) (map[string]any, error) {
+	p, err := s.requirePulse()
+	if err != nil {
+		return nil, err
+	}
+	loc, err := s.resolveLocation(ctx, in.City)
+	if err != nil {
+		return nil, err
+	}
+	tz, tzErr := time.LoadLocation(loc.Timezone)
+	if tzErr != nil {
+		tz = time.UTC
+	}
+	now := s.now().In(tz)
+
+	vibe, err := s.VibeToday(ctx, VibeArgs{City: in.City})
+	if err != nil {
+		return nil, err
+	}
+	row := &PulseRow{
+		Ts:   now.Format("2006-01-02T15:04"),
+		Date: now.Format("2006-01-02"),
+		Time: now.Format("15:04"),
+		City: loc.Label(),
+	}
+	if m, ok := vibe["moon"].(map[string]any); ok {
+		row.MoonPhase = str(m["name"])
+		row.MoonSign = str(m["moon_sign"])
+	}
+	if tr, ok := vibe["transits"].(map[string]any); ok {
+		row.Chart = str(tr["chart"])
+		if aspects, ok := tr["aspects"].([]Aspect); ok && len(aspects) > 0 {
+			row.Transit = aspects[0].String()
+			orbit := aspects[0].Orbit
+			row.Orbit = &orbit
+		}
+	}
+	if w, ok := vibe["weather"].(openmeteo.Weather); ok {
+		row.Temp = &w.Temperature
+	}
+	if err := p.Upsert(row); err != nil {
+		return nil, err
+	}
+	if removed, cerr := p.Cleanup(30, now); cerr == nil && removed > 0 {
+		log.Printf("pulse: ретенция 30 дней, удалено %d снимков", removed)
+	}
+	total, _ := p.Count()
+	return map[string]any{
+		"saved":      true,
+		"ts":         row.Ts,
+		"city":       row.City,
+		"temp":       row.Temp,
+		"moon":       strings.TrimSpace(row.MoonPhase + " " + row.MoonSign),
+		"transit":    row.Transit,
+		"orbit":      row.Orbit,
+		"pulse_rows": total,
+	}, nil
+}
+
+// PulseRead — сырые снимки пульса за последние N минут.
+func (s *Service) PulseRead(_ context.Context, in PulseArgs) (map[string]any, error) {
+	p, err := s.requirePulse()
+	if err != nil {
+		return nil, err
+	}
+	minutes := minutesArg(in.Minutes)
+	rows, err := p.Since(minutes, s.now())
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"minutes": minutes, "count": len(rows), "rows": rows}, nil
+}
+
+// PulseSummary — агрегированный отчёт по пульсу: смена лунных знаков,
+// таймлайн транзитов, температура.
+func (s *Service) PulseSummary(_ context.Context, in PulseArgs) (map[string]any, error) {
+	p, err := s.requirePulse()
+	if err != nil {
+		return nil, err
+	}
+	hours := hoursArg(in.Hours)
+	rows, err := p.Since(hours*60, s.now())
+	if err != nil {
+		return nil, err
+	}
+	return SummarizePulse(rows, hours*60), nil
+}
+
 // Status — диагностика: провайдеры и сохранённые карты.
 func (s *Service) Status(ctx context.Context) (map[string]any, error) {
 	astroOK, astroErr := "ok", ""
@@ -729,6 +959,11 @@ func (s *Service) Status(ctx context.Context) (map[string]any, error) {
 			},
 			"geocoding": map[string]any{"url": s.Cfg.GeoURL, "status": "ok", "comment": "Open-Meteo Geocoding, без ключа"},
 			"weather":   map[string]any{"url": s.Cfg.OpenMeteoURL, "status": "ok", "comment": "Open-Meteo Weather, без ключа"},
+			"affirmations": map[string]any{
+				"url":     s.Cfg.AffirmURL,
+				"status":  "ok",
+				"comment": "affirmations.dev + Google Translate (gtx), без ключа",
+			},
 		},
 		"charts":     list,
 		"store_file": s.Cfg.StoreFile,

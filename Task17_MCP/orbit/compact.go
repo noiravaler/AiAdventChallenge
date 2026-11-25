@@ -1,6 +1,7 @@
 package orbit
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 )
@@ -17,6 +18,11 @@ type Aspect struct {
 func mapAny(v any) map[string]any {
 	m, _ := v.(map[string]any)
 	return m
+}
+
+// String — человекочитаемая запись аспекта: «Sun trine Moon».
+func (a Aspect) String() string {
+	return fmt.Sprintf("%s %s %s", a.P1, a.Aspect, a.P2)
 }
 
 // ChartData достаёт chart_data из ответа движка.

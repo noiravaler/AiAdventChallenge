@@ -24,6 +24,10 @@ type Config struct {
 	OpenMeteoURL     string        // Open-Meteo Weather API (погода)
 	OpenMeteoTimeout time.Duration // лимит запроса погоды
 
+	AffirmURL     string        // affirmations.dev — аффирмация дня (без ключа)
+	AffirmTimeout time.Duration // лимит запроса аффирмаций
+	TranslateURL  string        // Google Translate (gtx) — перевод аффирмации на русский
+
 	DefaultCity string // город по умолчанию (когда не задан city и нет сохранённых карт)
 	Lang        string // язык SVG-карт (RU, EN, …)
 	Theme       string // тема SVG-карт (classic, dark, …)
@@ -31,6 +35,9 @@ type Config struct {
 
 	StoreFile string // файл персистентности натальных карт (JSON)
 	ChartsDir string // каталог для отрисованных SVG-колёс (chart_render)
+
+	JournalFile string // файл дневника наблюдений (journal_capture/read/summary)
+	PulseDB     string // SQLite-база пульса неба (pulse_capture/read/summary)
 
 	// Автозапуск self-hosted движка Astrologer-API.
 	AstroDir           string        // каталог клона движка (включает автозапуск в режиме auto)
@@ -58,12 +65,17 @@ func Load(argv []string) (*Config, error) {
 		GeoTimeout:       envDur("ORBIT_GEO_TIMEOUT", 15*time.Second),
 		OpenMeteoURL:     env("ORBIT_OPENMETEO_URL", "https://api.open-meteo.com"),
 		OpenMeteoTimeout: envDur("ORBIT_OPENMETEO_TIMEOUT", 15*time.Second),
+		AffirmURL:        env("ORBIT_AFFIRM_URL", "https://www.affirmations.dev"),
+		AffirmTimeout:    envDur("ORBIT_AFFIRM_TIMEOUT", 10*time.Second),
+		TranslateURL:     env("ORBIT_TRANSLATE_URL", "https://translate.googleapis.com/translate_a/single"),
 		DefaultCity:      env("ORBIT_DEFAULT_CITY", "Москва"),
 		Lang:             env("ORBIT_LANG", "RU"),
 		Theme:            env("ORBIT_THEME", "classic"),
 		Houses:           env("ORBIT_HOUSES", "P"),
 		StoreFile:        env("ORBIT_STORE_FILE", "orbit-charts.json"),
 		ChartsDir:        env("ORBIT_CHARTS_DIR", ""),
+		JournalFile:      env("ORBIT_JOURNAL_FILE", "orbit-journal.json"),
+		PulseDB:          env("ORBIT_PULSE_DB", "orbit-pulse.db"),
 
 		AstroDir:           env("ORBIT_ASTRO_DIR", ""),
 		EngineAutostart:    env("ORBIT_ENGINE_AUTOSTART", "auto"),

@@ -115,6 +115,72 @@ func NewToolkit(svc *Service) *Toolkit {
 			return t.Svc.Status(ctx)
 		})
 
+	t.add("daily_affirmation",
+		"Аффирмация дня с affirmations.dev на русском языке со случайным волшебным смайликом. Используйте как доброе напутствие в конце ответа или дополните брифинг vibe_today.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			return t.Svc.Affirmation(ctx)
+		})
+
+	t.add("journal_capture",
+		"Снимок дня для журнала наблюдений: собирает погоду, фазу Луны, тесные транзиты к последней карте и аффирмацию дня, сохраняет запись за сегодня (повторный вызов перезаписывает её). Основной инструмент для планировщика — один вызов в день.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in JournalArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.JournalCapture(ctx, in)
+		})
+
+	t.add("journal_read",
+		"Читает накопленные записи дневника наблюдений за период (по умолчанию 7 дней) — сырые снимки: погода, Луна, транзиты, аффирмации.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in JournalArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.JournalRead(ctx, in)
+		})
+
+	t.add("journal_summary",
+		"Агрегированный отчёт по дневнику за период: средняя/мин/макс температура, дни с осадками, траектория фаз Луны, самые частые транзиты, аффирмации и напоминания. Вызывайте по расписанию для регулярного саммари.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in JournalArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.JournalSummary(ctx, in)
+		})
+
+	t.add("pulse_capture",
+		"Минутный снимок неба для пульса: фаза Луны и её знак, самый тесный транзит к последней карте, температура. Лёгкий, идемпотентен в пределах минуты — предназначен для частых вызовов планировщиком (хоть каждую минуту), хранится в SQLite.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in PulseArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.PulseCapture(ctx, in)
+		})
+
+	t.add("pulse_read",
+		"Читает сырые снимки пульса за последние N минут (по умолчанию 60, максимум 1440) — поминутная хронология неба.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in PulseArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.PulseRead(ctx, in)
+		})
+
+	t.add("pulse_summary",
+		"Агрегированный отчёт по пульсу за окно в часах: моменты смены лунного знака, таймлайн транзитов (когда вошёл/ушёл/точнее всего), температурная кривая.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in PulseArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.PulseSummary(ctx, in)
+		})
+
 	return t
 }
 
@@ -165,6 +231,27 @@ func (t *Toolkit) Attach(server *mcp.Server) {
 	})
 	mcp.AddTool(server, t.tool("orbit_status"), func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 		return t.call(ctx, "orbit_status", func() (any, error) { return t.Svc.Status(ctx) })
+	})
+	mcp.AddTool(server, t.tool("daily_affirmation"), func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "daily_affirmation", func() (any, error) { return t.Svc.Affirmation(ctx) })
+	})
+	mcp.AddTool(server, t.tool("journal_capture"), func(ctx context.Context, _ *mcp.CallToolRequest, in JournalArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "journal_capture", func() (any, error) { return t.Svc.JournalCapture(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("journal_read"), func(ctx context.Context, _ *mcp.CallToolRequest, in JournalArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "journal_read", func() (any, error) { return t.Svc.JournalRead(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("journal_summary"), func(ctx context.Context, _ *mcp.CallToolRequest, in JournalArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "journal_summary", func() (any, error) { return t.Svc.JournalSummary(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("pulse_capture"), func(ctx context.Context, _ *mcp.CallToolRequest, in PulseArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "pulse_capture", func() (any, error) { return t.Svc.PulseCapture(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("pulse_read"), func(ctx context.Context, _ *mcp.CallToolRequest, in PulseArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "pulse_read", func() (any, error) { return t.Svc.PulseRead(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("pulse_summary"), func(ctx context.Context, _ *mcp.CallToolRequest, in PulseArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "pulse_summary", func() (any, error) { return t.Svc.PulseSummary(ctx, in) })
 	})
 }
 

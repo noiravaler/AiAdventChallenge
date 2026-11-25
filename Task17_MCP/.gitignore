@@ -1,6 +1,11 @@
 # персональные данные натальных карт не попадают в репозиторий
 orbit-charts.json
 orbit-charts.json.tmp
+orbit-journal.json
+orbit-journal.json.tmp
+orbit-pulse.db
+orbit-pulse.db-wal
+orbit-pulse.db-shm
 
 .env
 bin/
