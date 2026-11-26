@@ -181,6 +181,79 @@ func NewToolkit(svc *Service) *Toolkit {
 			return t.Svc.PulseSummary(ctx, in)
 		})
 
+	// Пайплайн «Подбор благоприятной даты»: шаги идут строго по цепочке,
+	// между шагами передаётся только election_id (данные живут на сервере).
+	t.add("elect_start",
+		"Шаг 1/4 пайплайна подбора благоприятной даты: фиксирует цель, место и натальную карту, создаёт сессию и возвращает election_id — передавайте его во все следующие шаги. Дальше вызовите elect_scan.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in ElectStartArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.ElectStart(ctx, in)
+		})
+
+	t.add("elect_scan",
+		"Шаг 2/4: по каждому дню окна собирает сырые факты — тесные транзиты к наталу (орбис до 3°) и Луну (знак, фаза, стадия). Дальше вызовите elect_score.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in ElectStepArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.ElectScan(ctx, in)
+		})
+
+	t.add("elect_score",
+		"Шаг 3/4: оценивает просканированные дни (гармоничные/напряжённые аспекты, знак и фаза Луны против цели) и выбирает топ-3. Дальше вызовите elect_report.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in ElectStepArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.ElectScore(ctx, in)
+		})
+
+	t.add("elect_report",
+		"Шаг 4/4 (финальный): собирает markdown-отчёт подбора — цель, место, топ-даты с обоснованием, аффирмация. Цепочка завершена (next пустой).",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in ElectStepArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.ElectReport(ctx, in)
+		})
+
+	// Пайплайн «Утренний брифинг»: start → collect → compose.
+	t.add("brief_start",
+		"Шаг 1/3 пайплайна утреннего брифинга: фиксирует город и создаёт сессию, возвращает brief_id — передавайте его в brief_collect и brief_compose. Дальше вызовите brief_collect.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in BriefStartArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.BriefStart(ctx, in)
+		})
+
+	t.add("brief_collect",
+		"Шаг 2/3: наполняет сессию секциями — погода, Луна, тесные транзиты к последней карте, подсказки дня. Дальше вызовите brief_compose.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in BriefStepArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.BriefCollect(ctx, in)
+		})
+
+	t.add("brief_compose",
+		"Шаг 3/3 (финальный): собирает markdown-брифинг из собранных секций. Цепочка завершена (next пустой).",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in BriefStepArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.BriefCompose(ctx, in)
+		})
+
 	return t
 }
 
@@ -252,6 +325,27 @@ func (t *Toolkit) Attach(server *mcp.Server) {
 	})
 	mcp.AddTool(server, t.tool("pulse_summary"), func(ctx context.Context, _ *mcp.CallToolRequest, in PulseArgs) (*mcp.CallToolResult, any, error) {
 		return t.call(ctx, "pulse_summary", func() (any, error) { return t.Svc.PulseSummary(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("elect_start"), func(ctx context.Context, _ *mcp.CallToolRequest, in ElectStartArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "elect_start", func() (any, error) { return t.Svc.ElectStart(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("elect_scan"), func(ctx context.Context, _ *mcp.CallToolRequest, in ElectStepArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "elect_scan", func() (any, error) { return t.Svc.ElectScan(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("elect_score"), func(ctx context.Context, _ *mcp.CallToolRequest, in ElectStepArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "elect_score", func() (any, error) { return t.Svc.ElectScore(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("elect_report"), func(ctx context.Context, _ *mcp.CallToolRequest, in ElectStepArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "elect_report", func() (any, error) { return t.Svc.ElectReport(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("brief_start"), func(ctx context.Context, _ *mcp.CallToolRequest, in BriefStartArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "brief_start", func() (any, error) { return t.Svc.BriefStart(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("brief_collect"), func(ctx context.Context, _ *mcp.CallToolRequest, in BriefStepArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "brief_collect", func() (any, error) { return t.Svc.BriefCollect(ctx, in) })
+	})
+	mcp.AddTool(server, t.tool("brief_compose"), func(ctx context.Context, _ *mcp.CallToolRequest, in BriefStepArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "brief_compose", func() (any, error) { return t.Svc.BriefCompose(ctx, in) })
 	})
 }
 

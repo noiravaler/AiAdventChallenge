@@ -433,8 +433,8 @@ func TestToolkitInvoke(t *testing.T) {
 	if _, err := tk.Invoke(context.Background(), "orbit_status", nil); err != nil {
 		t.Fatalf("orbit_status должен работать без аргументов: %v", err)
 	}
-	if got := len(tk.Defs()); got != 16 {
-		t.Fatalf("должно быть 16 инструментов, зарегистрировано %d", got)
+	if got := len(tk.Defs()); got != 23 { // 16 прежних + 7 шагов пайплайнов (elect_*, brief_*)
+		t.Fatalf("должно быть 23 инструмента, зарегистрировано %d", got)
 	}
 }
 

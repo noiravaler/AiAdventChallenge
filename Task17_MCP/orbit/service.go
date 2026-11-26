@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -36,20 +37,29 @@ type Service struct {
 
 	ChartsDir string // каталог для отрисованных SVG (пусто — рендер в файл отключён)
 	PublicURL string // базовый URL HTTP-режима для ссылок в результатах; пусто = stdio
+
+	// Цепочки инструментов (пайплайны): промежуточные данные живут на
+	// сервере, модель между шагами передаёт только ID сессии.
+	electMu       sync.Mutex
+	electSessions map[string]*ElectSession
+	briefMu       sync.Mutex
+	briefSessions map[string]*BriefSession
 }
 
 // New собирает сервис из конфигурации.
 func New(cfg *config.Config) *Service {
 	return &Service{
-		Cfg:       cfg,
-		Astro:     astrologer.New(cfg.AstroURL, cfg.AstroVersion, cfg.AstroKey, cfg.AstroTimeout),
-		Geo:       openmeteo.NewGeoClient(cfg.GeoURL, cfg.GeoTimeout),
-		Weather:   openmeteo.NewWeatherClient(cfg.OpenMeteoURL, cfg.OpenMeteoTimeout),
-		Affirm:    affirmations.New(cfg.AffirmURL, cfg.TranslateURL, cfg.AffirmTimeout),
-		Store:     &Store{},
-		Cache:     NewCache(),
-		Now:       time.Now,
-		ChartsDir: cfg.ChartsDir,
+		Cfg:           cfg,
+		Astro:         astrologer.New(cfg.AstroURL, cfg.AstroVersion, cfg.AstroKey, cfg.AstroTimeout),
+		Geo:           openmeteo.NewGeoClient(cfg.GeoURL, cfg.GeoTimeout),
+		Weather:       openmeteo.NewWeatherClient(cfg.OpenMeteoURL, cfg.OpenMeteoTimeout),
+		Affirm:        affirmations.New(cfg.AffirmURL, cfg.TranslateURL, cfg.AffirmTimeout),
+		Store:         &Store{},
+		Cache:         NewCache(),
+		Now:           time.Now,
+		ChartsDir:     cfg.ChartsDir,
+		electSessions: map[string]*ElectSession{},
+		briefSessions: map[string]*BriefSession{},
 	}
 }
 
@@ -138,6 +148,34 @@ type PulseArgs struct {
 	City    string `json:"city,omitempty" jsonschema:"город снимка (только pulse_capture); пусто — город последней карты"`
 	Minutes *int   `json:"minutes,omitempty" jsonschema:"окно чтения в минутах, 1–1440 (только pulse_read; по умолчанию 60)"`
 	Hours   *int   `json:"hours,omitempty" jsonschema:"окно отчёта в часах, 1–720 (только pulse_summary; по умолчанию 24)"`
+}
+
+// ElectStartArgs — elect_start (шаг 1 подбора благоприятной даты).
+type ElectStartArgs struct {
+	Goal       string `json:"goal" jsonschema:"цель, под которую ищем дату, напр. 'запуск блога'"`
+	City       string `json:"city,omitempty" jsonschema:"город события; пусто — город последней карты"`
+	Chart      string `json:"chart,omitempty" jsonschema:"имя натальной карты; пусто — последняя построенная"`
+	WindowDays *int   `json:"window_days,omitempty" jsonschema:"окно поиска в днях, 0–31 (по умолчанию 14)"`
+	Simulate   string `json:"simulate,omitempty" jsonschema:"демо-инъекция сбоя: error — шаг вернёт ошибку, empty — пустой результат; по умолчанию обычная работа"`
+}
+
+// ElectStepArgs — шаги подбора даты после elect_start: в аргументах только
+// ID сессии — сырые данные (аспекты дней, скоры) лежат на сервере.
+type ElectStepArgs struct {
+	ElectionID string `json:"election_id" jsonschema:"ID сессии из ответа предыдущего шага"`
+	Simulate   string `json:"simulate,omitempty" jsonschema:"демо-инъекция сбоя: error — шаг вернёт ошибку, empty — пустой результат; по умолчанию обычная работа"`
+}
+
+// BriefStartArgs — brief_start (шаг 1 утреннего брифинга).
+type BriefStartArgs struct {
+	City     string `json:"city,omitempty" jsonschema:"город брифинга; пусто — город последней карты"`
+	Simulate string `json:"simulate,omitempty" jsonschema:"демо-инъекция сбоя: error — шаг вернёт ошибку, empty — пустой результат; по умолчанию обычная работа"`
+}
+
+// BriefStepArgs — шаги брифинга после brief_start.
+type BriefStepArgs struct {
+	BriefID  string `json:"brief_id" jsonschema:"ID брифинга из ответа предыдущего шага"`
+	Simulate string `json:"simulate,omitempty" jsonschema:"демо-инъекция сбоя: error — шаг вернёт ошибку, empty — пустой результат; по умолчанию обычная работа"`
 }
 
 // ---------- Вспомогательные ----------
