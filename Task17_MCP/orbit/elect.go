@@ -350,9 +350,8 @@ func (s *Service) ElectScore(ctx context.Context, in ElectStepArgs) (map[string]
 // ---------- Шаг 4: elect_report ----------
 
 // ElectReport собирает финальный markdown-отчёт: цель, место, топ-даты с
-// обоснованием и аффирмацией-напутствием. Это последний шаг цепочки
-// (next пустой) — после него session остаётся в статусе done для повторного
-// чтения, пока не истечёт TTL.
+// обоснованием. Последний шаг цепочки (next пустой) — после него session
+// остаётся в статусе done для повторного чтения, пока не истечёт TTL.
 func (s *Service) ElectReport(ctx context.Context, in ElectStepArgs) (map[string]any, error) {
 	sess, err := s.electLookup(in.ElectionID)
 	if err != nil {
@@ -383,9 +382,6 @@ func (s *Service) ElectReport(ctx context.Context, in ElectStepArgs) (map[string
 			b.WriteString("- " + r + "\n")
 		}
 		b.WriteString("\n")
-	}
-	if res, aerr := s.Affirm.Russian(ctx); aerr == nil {
-		fmt.Fprintf(&b, "_Аффирмация: %s %s_\n", res.Affirmation, res.Emoji)
 	}
 	b.WriteString("\n_Оценки эвристические: аспекты, знак и фаза Луны. Финальную трактовку формулирует модель._\n")
 

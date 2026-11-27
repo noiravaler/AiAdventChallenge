@@ -1,6 +1,9 @@
-// Package affirmations — клиент бесплатного API affirmations.dev (без ключа)
-// и перевода на русский через бесплатный эндпоинт Google Translate (gtx,
-// тоже без ключа). Используется инструментом daily_affirmation.
+// Package affirmations — клиенты бесплатных внешних сервисов для
+// MCP-сервера Affirm (Task20_MCP): affirmations.dev (аффирмация дня, без
+// ключа) и перевод через бесплатный эндпоинт Google Translate (gtx, тоже
+// без ключа). Пакет вынесен из Task17_MCP: там он обслуживал инструмент
+// daily_affirmation (и им пользуются journal_*/elect_*), здесь — ядро
+// отдельного сервера.
 package affirmations
 
 import (
@@ -59,6 +62,56 @@ func (c *Client) Russian(ctx context.Context) (Result, error) {
 	return Result{Affirmation: affirmation, Emoji: pickEmoji()}, nil
 }
 
+// Translate — перевод произвольного текста через бесплатный эндпоинт
+// Google Translate (client=gtx, без ключа). sl/tl — коды языков («en»,
+// «ru», …); пустое значение трактуется как en→ru.
+func (c *Client) Translate(ctx context.Context, text, sl, tl string) (string, error) {
+	if strings.TrimSpace(sl) == "" {
+		sl = "en"
+	}
+	if strings.TrimSpace(tl) == "" {
+		tl = "ru"
+	}
+	q := url.Values{}
+	q.Set("client", "gtx")
+	q.Set("sl", sl)
+	q.Set("tl", tl)
+	q.Set("dt", "t")
+	q.Set("q", text)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.translateURL+"?"+q.Encode(), nil)
+	if err != nil {
+		return "", err
+	}
+	raw, err := c.do(req, "переводчик")
+	if err != nil {
+		return "", err
+	}
+	return parseGTX(raw)
+}
+
+// Status — диагностика доступности обоих провайдеров. Ошибка одного
+// сервиса не роняет проверку другого.
+func (c *Client) Status(ctx context.Context) map[string]any {
+	out := map[string]any{}
+	if _, err := c.fetch(ctx); err != nil {
+		out["affirmations"] = map[string]any{"url": c.base, "status": "error", "error": err.Error()}
+	} else {
+		out["affirmations"] = map[string]any{"url": c.base, "status": "ok", "comment": "affirmations.dev, без ключа"}
+	}
+	switch {
+	case c.translateURL == "":
+		out["translate"] = map[string]any{"status": "off", "comment": "переводчик не настроен — только оригинал"}
+	default:
+		if _, err := c.translate(ctx, "hello"); err != nil {
+			out["translate"] = map[string]any{"url": c.translateURL, "status": "error", "error": err.Error()}
+		} else {
+			out["translate"] = map[string]any{"url": c.translateURL, "status": "ok", "comment": "Google Translate (gtx), без ключа"}
+		}
+	}
+	return out
+}
+
 // pickEmoji — случайный смайлик из набора.
 func pickEmoji() string { return magicEmoji[rand.IntN(len(magicEmoji))] }
 
@@ -86,24 +139,9 @@ func (c *Client) fetch(ctx context.Context) (string, error) {
 	return parsed.Affirmation, nil
 }
 
-// translate — бесплатный эндпоинт Google Translate (client=gtx, без ключа).
+// translate — перевод en→ru (направление по умолчанию для аффирмаций).
 func (c *Client) translate(ctx context.Context, text string) (string, error) {
-	q := url.Values{}
-	q.Set("client", "gtx")
-	q.Set("sl", "en")
-	q.Set("tl", "ru")
-	q.Set("dt", "t")
-	q.Set("q", text)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.translateURL+"?"+q.Encode(), nil)
-	if err != nil {
-		return "", err
-	}
-	raw, err := c.do(req, "переводчик")
-	if err != nil {
-		return "", err
-	}
-	return parseGTX(raw)
+	return c.Translate(ctx, text, "en", "ru")
 }
 
 // parseGTX разбирает ответ gtx вида [[["перевод","оригинал",…],…],null,"en",…]:

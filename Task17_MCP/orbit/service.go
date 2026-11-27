@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode"
 
-	"ai-chat-go/affirmations"
 	"ai-chat-go/astrologer"
 	"ai-chat-go/config"
 	"ai-chat-go/openmeteo"
@@ -28,7 +27,6 @@ type Service struct {
 	Astro   *astrologer.Client
 	Geo     *openmeteo.GeoClient
 	Weather *openmeteo.WeatherClient
-	Affirm  *affirmations.Client
 	Store   *Store
 	Journal *Journal
 	Pulse   *PulseStore
@@ -53,7 +51,6 @@ func New(cfg *config.Config) *Service {
 		Astro:         astrologer.New(cfg.AstroURL, cfg.AstroVersion, cfg.AstroKey, cfg.AstroTimeout),
 		Geo:           openmeteo.NewGeoClient(cfg.GeoURL, cfg.GeoTimeout),
 		Weather:       openmeteo.NewWeatherClient(cfg.OpenMeteoURL, cfg.OpenMeteoTimeout),
-		Affirm:        affirmations.New(cfg.AffirmURL, cfg.TranslateURL, cfg.AffirmTimeout),
 		Store:         &Store{},
 		Cache:         NewCache(),
 		Now:           time.Now,
@@ -769,12 +766,6 @@ func (s *Service) RenderedCharts() []map[string]any {
 	return out
 }
 
-// Affirmation — аффирмация дня с affirmations.dev: оригинал (en) и перевод
-// на русский. Сбой переводчика не роняет инструмент — вернётся оригинал.
-func (s *Service) Affirmation(ctx context.Context) (affirmations.Result, error) {
-	return s.Affirm.Russian(ctx)
-}
-
 // ---------- Дневник наблюдений ----------
 
 // requireJournal возвращает накопитель или ошибку, если он не настроен.
@@ -785,8 +776,8 @@ func (s *Service) requireJournal() (*Journal, error) {
 	return s.Journal, nil
 }
 
-// JournalCapture — снимок дня: собирает погоду, Луну, тесные транзиты и
-// аффирмацию (переиспользуя vibe_today) и сохраняет запись за сегодня.
+// JournalCapture — снимок дня: собирает погоду, Луну и тесные транзиты
+// (переиспользуя vibe_today) и сохраняет запись за сегодня.
 // Повторный вызов за тот же день перезаписывает запись (идемпотентно).
 func (s *Service) JournalCapture(ctx context.Context, in JournalArgs) (map[string]any, error) {
 	j, err := s.requireJournal()
@@ -820,9 +811,6 @@ func (s *Service) JournalCapture(ctx context.Context, in JournalArgs) (map[strin
 			entry.Transits = aspects
 		}
 	}
-	if res, aerr := s.Affirm.Russian(ctx); aerr == nil {
-		entry.Affirmation, entry.Emoji = res.Affirmation, res.Emoji
-	}
 	if err := j.Upsert(entry); err != nil {
 		return nil, err
 	}
@@ -835,8 +823,6 @@ func (s *Service) JournalCapture(ctx context.Context, in JournalArgs) (map[strin
 		"moon_phase":      entry.MoonPhase,
 		"transits":        len(entry.Transits),
 		"chart":           entry.Chart,
-		"affirmation":     entry.Affirmation,
-		"emoji":           entry.Emoji,
 		"journal_entries": j.Count(),
 	}, nil
 }
@@ -997,11 +983,6 @@ func (s *Service) Status(ctx context.Context) (map[string]any, error) {
 			},
 			"geocoding": map[string]any{"url": s.Cfg.GeoURL, "status": "ok", "comment": "Open-Meteo Geocoding, без ключа"},
 			"weather":   map[string]any{"url": s.Cfg.OpenMeteoURL, "status": "ok", "comment": "Open-Meteo Weather, без ключа"},
-			"affirmations": map[string]any{
-				"url":     s.Cfg.AffirmURL,
-				"status":  "ok",
-				"comment": "affirmations.dev + Google Translate (gtx), без ключа",
-			},
 		},
 		"charts":     list,
 		"store_file": s.Cfg.StoreFile,

@@ -69,6 +69,19 @@ func NewToolkit(svc *Service) *Toolkit {
 			return t.Svc.Synastry(ctx, in)
 		})
 
+	// daily_affirmation — умышленный дубль synastry_compare под другим
+	// именем: конфликтует с одноимённым инструментом сервера affirm-mcp
+	// (Task20_MCP), чат-хаб разруливает это префиксами orbit__/affirm__.
+	t.add("daily_affirmation",
+		"Совместимость двух сохранённых натальных карт: межкартовые аспекты, попадания планет в дома партнёра и скор совместимости (метод Ciro Discepolo) с расшифровкой.",
+		func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var in SynastryArgs
+			if err := decode(raw, &in); err != nil {
+				return nil, err
+			}
+			return t.Svc.Synastry(ctx, in)
+		})
+
 	t.add("solar_return",
 		"Солярная карта на год: положения планет в момент солнечного возвращения — основа годового прогноза от дня рождения.",
 		func(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -115,14 +128,8 @@ func NewToolkit(svc *Service) *Toolkit {
 			return t.Svc.Status(ctx)
 		})
 
-	t.add("daily_affirmation",
-		"Аффирмация дня с affirmations.dev на русском языке со случайным волшебным смайликом. Используйте как доброе напутствие в конце ответа или дополните брифинг vibe_today.",
-		func(ctx context.Context, raw json.RawMessage) (any, error) {
-			return t.Svc.Affirmation(ctx)
-		})
-
 	t.add("journal_capture",
-		"Снимок дня для журнала наблюдений: собирает погоду, фазу Луны, тесные транзиты к последней карте и аффирмацию дня, сохраняет запись за сегодня (повторный вызов перезаписывает её). Основной инструмент для планировщика — один вызов в день.",
+		"Снимок дня для журнала наблюдений: собирает погоду, фазу Луны и тесные транзиты к последней карте, сохраняет запись за сегодня (повторный вызов перезаписывает её). Основной инструмент для планировщика — один вызов в день.",
 		func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var in JournalArgs
 			if err := decode(raw, &in); err != nil {
@@ -132,7 +139,7 @@ func NewToolkit(svc *Service) *Toolkit {
 		})
 
 	t.add("journal_read",
-		"Читает накопленные записи дневника наблюдений за период (по умолчанию 7 дней) — сырые снимки: погода, Луна, транзиты, аффирмации.",
+		"Читает накопленные записи дневника наблюдений за период (по умолчанию 7 дней) — сырые снимки: погода, Луна, транзиты.",
 		func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var in JournalArgs
 			if err := decode(raw, &in); err != nil {
@@ -142,7 +149,7 @@ func NewToolkit(svc *Service) *Toolkit {
 		})
 
 	t.add("journal_summary",
-		"Агрегированный отчёт по дневнику за период: средняя/мин/макс температура, дни с осадками, траектория фаз Луны, самые частые транзиты, аффирмации и напоминания. Вызывайте по расписанию для регулярного саммари.",
+		"Агрегированный отчёт по дневнику за период: средняя/мин/макс температура, дни с осадками, траектория фаз Луны, самые частые транзиты и напоминания. Вызывайте по расписанию для регулярного саммари.",
 		func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var in JournalArgs
 			if err := decode(raw, &in); err != nil {
@@ -214,7 +221,7 @@ func NewToolkit(svc *Service) *Toolkit {
 		})
 
 	t.add("elect_report",
-		"Шаг 4/4 (финальный): собирает markdown-отчёт подбора — цель, место, топ-даты с обоснованием, аффирмация. Цепочка завершена (next пустой).",
+		"Шаг 4/4 (финальный): собирает markdown-отчёт подбора — цель, место, топ-даты с обоснованием. Цепочка завершена (next пустой).",
 		func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var in ElectStepArgs
 			if err := decode(raw, &in); err != nil {
@@ -305,8 +312,10 @@ func (t *Toolkit) Attach(server *mcp.Server) {
 	mcp.AddTool(server, t.tool("orbit_status"), func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 		return t.call(ctx, "orbit_status", func() (any, error) { return t.Svc.Status(ctx) })
 	})
-	mcp.AddTool(server, t.tool("daily_affirmation"), func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-		return t.call(ctx, "daily_affirmation", func() (any, error) { return t.Svc.Affirmation(ctx) })
+	// daily_affirmation — синхронный дубль synastry_compare (см. t.add):
+	// имя совпадает с инструментом affirm-mcp, поведение — синастрия.
+	mcp.AddTool(server, t.tool("daily_affirmation"), func(ctx context.Context, _ *mcp.CallToolRequest, in SynastryArgs) (*mcp.CallToolResult, any, error) {
+		return t.call(ctx, "daily_affirmation", func() (any, error) { return t.Svc.Synastry(ctx, in) })
 	})
 	mcp.AddTool(server, t.tool("journal_capture"), func(ctx context.Context, _ *mcp.CallToolRequest, in JournalArgs) (*mcp.CallToolResult, any, error) {
 		return t.call(ctx, "journal_capture", func() (any, error) { return t.Svc.JournalCapture(ctx, in) })

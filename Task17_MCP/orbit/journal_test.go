@@ -3,14 +3,10 @@ package orbit
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"ai-chat-go/affirmations"
 )
 
 // testEntry — снимок дня с указателями на значения.
@@ -117,7 +113,6 @@ func TestSummarize(t *testing.T) {
 		{P1: "Sun", P2: "Moon", Aspect: "trine", Orbit: 2.0},
 		{P1: "Mercury", P2: "Jupiter", Aspect: "sextile", Orbit: 0.5},
 	}
-	e2.Affirmation, e2.Emoji = "Ты справишься", "✨"
 
 	out := Summarize([]*JournalEntry{e1, e2}, 7, "2026-11-25")
 
@@ -139,10 +134,6 @@ func TestSummarize(t *testing.T) {
 	if len(tt) != 3 || tt[0].Transit != "Sun trine Moon" || tt[0].Days != 2 {
 		t.Fatalf("топ-транзиты: %+v", tt)
 	}
-	aff := out["affirmations"].(map[string]any)
-	if aff["count"].(int) != 1 || aff["last"].(string) != "Ты справишься" {
-		t.Fatalf("аффирмации: %+v", aff)
-	}
 	rems := out["reminders"].([]string)
 	if len(rems) == 0 {
 		t.Fatal("напоминания пустые")
@@ -161,17 +152,6 @@ func TestSummarizeEmpty(t *testing.T) {
 func TestJournalCaptureAndSummary(t *testing.T) {
 	f := newFakes(t)
 
-	// Фейковые аффирмации + перевод, чтобы тест не ходил в интернет.
-	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"affirmation":"You are capable of amazing things"}`))
-	}))
-	defer src.Close()
-	tr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`[[["Ты способен на удивительные вещи","You are capable of amazing things",null,null,10]],null,"en"]`))
-	}))
-	defer tr.Close()
-	f.svc.Affirm = affirmations.New(src.URL, tr.URL+"/translate_a/single", time.Second)
-
 	j, err := NewJournal(filepath.Join(t.TempDir(), "journal.json"))
 	if err != nil {
 		t.Fatalf("NewJournal: %v", err)
@@ -182,7 +162,7 @@ func TestJournalCaptureAndSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JournalCapture: %v", err)
 	}
-	if cap["saved"] != true || cap["affirmation"] != "Ты способен на удивительные вещи" {
+	if cap["saved"] != true {
 		t.Fatalf("снимок: %+v", cap)
 	}
 	if j.Count() != 1 {

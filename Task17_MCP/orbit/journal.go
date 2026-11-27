@@ -12,23 +12,21 @@ import (
 	"time"
 )
 
-// JournalEntry — суточный снимок наблюдений: погода, Луна, тесные транзиты
-// и аффирмация дня. Числовые поля — указатели: «не снимали» ≠ «ноль».
+// JournalEntry — суточный снимок наблюдений: погода, Луна и тесные
+// транзиты. Числовые поля — указатели: «не снимали» ≠ «ноль».
 type JournalEntry struct {
-	Date        string    `json:"date"` // YYYY-MM-DD (локальная дата места)
-	City        string    `json:"city,omitempty"`
-	CapturedAt  time.Time `json:"captured_at"`
-	Temp        *float64  `json:"temp,omitempty"`     // °C на момент съёма
-	TempMax     *float64  `json:"temp_max,omitempty"` // прогноз на день
-	TempMin     *float64  `json:"temp_min,omitempty"`
-	PrecipProb  *int      `json:"precip_probability,omitempty"` // % вероятность осадков
-	Weather     string    `json:"weather,omitempty"`            // «ясно», «дождь»…
-	MoonPhase   string    `json:"moon_phase,omitempty"`         // «полнолуние»…
-	MoonSign    string    `json:"moon_sign,omitempty"`
-	Affirmation string    `json:"affirmation,omitempty"`
-	Emoji       string    `json:"emoji,omitempty"`
-	Chart       string    `json:"chart,omitempty"`    // имя карты транзитов
-	Transits    []Aspect  `json:"transits,omitempty"` // топ-3 тесных аспекта
+	Date       string    `json:"date"` // YYYY-MM-DD (локальная дата места)
+	City       string    `json:"city,omitempty"`
+	CapturedAt time.Time `json:"captured_at"`
+	Temp       *float64  `json:"temp,omitempty"`     // °C на момент съёма
+	TempMax    *float64  `json:"temp_max,omitempty"` // прогноз на день
+	TempMin    *float64  `json:"temp_min,omitempty"`
+	PrecipProb *int      `json:"precip_probability,omitempty"` // % вероятность осадков
+	Weather    string    `json:"weather,omitempty"`            // «ясно», «дождь»…
+	MoonPhase  string    `json:"moon_phase,omitempty"`         // «полнолуние»…
+	MoonSign   string    `json:"moon_sign,omitempty"`
+	Chart      string    `json:"chart,omitempty"`    // имя карты транзитов
+	Transits   []Aspect  `json:"transits,omitempty"` // топ-3 тесных аспекта
 }
 
 // Journal — дневник наблюдений: JSON-файл, не более одной записи на дату
@@ -160,7 +158,7 @@ type transitStat struct {
 }
 
 // Summarize — агрегированный отчёт по записям дневника за период:
-// температура, осадки, фазы Луны, частые транзиты, аффирмации, напоминания.
+// температура, осадки, фазы Луны, частые транзиты, напоминания.
 // today — YYYY-MM-DD для тестов; пусто — текущая дата.
 func Summarize(entries []*JournalEntry, days int, today string) map[string]any {
 	if today == "" {
@@ -301,27 +299,6 @@ func Summarize(entries []*JournalEntry, days int, today string) map[string]any {
 			list = list[:5]
 		}
 		out["top_transits"] = list
-	}
-
-	// Аффирмации.
-	var lastAff, lastEmoji string
-	for _, e := range entries {
-		if e.Affirmation != "" {
-			lastAff, lastEmoji = e.Affirmation, e.Emoji
-		}
-	}
-	if lastAff != "" {
-		count := 0
-		for _, e := range entries {
-			if e.Affirmation != "" {
-				count++
-			}
-		}
-		out["affirmations"] = map[string]any{
-			"count": count,
-			"last":  lastAff,
-			"emoji": lastEmoji,
-		}
 	}
 
 	out["reminders"] = summarizeReminders(entries, days, today, hasChart)

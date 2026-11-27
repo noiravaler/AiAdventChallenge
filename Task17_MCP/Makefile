@@ -32,8 +32,10 @@ probe-natal:
 probe-vibe:
 	go run ./app -probe vibe_today -args '{"city":"Казань"}'
 
-probe-affirmation:
-	go run ./app -probe daily_affirmation
+probe-synastry:
+	go run ./app -probe natal_build_chart -args '{"name":"Anna","birth_date":"1995-07-21","birth_time":"14:30","city":"Казань"}'
+	go run ./app -probe natal_build_chart -args '{"name":"Ivan","birth_date":"1990-03-05","birth_time":"08:15","city":"Москва"}'
+	go run ./app -probe synastry_compare -args '{"first":"Anna","second":"Ivan"}'
 
 probe-journal-capture:
 	go run ./app -probe journal_capture

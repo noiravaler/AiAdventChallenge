@@ -27,7 +27,7 @@ type BriefSession struct {
 	ID        string
 	City      string // исходная строка пользователя (для resolveLocation)
 	Place     openmeteo.Location
-	Status    string // started → collected → done
+	Status    string         // started → collected → done
 	Data      map[string]any // секции брифинга: weather, moon, transits, hints
 	CreatedAt time.Time
 }
@@ -201,9 +201,6 @@ func (s *Service) BriefCompose(ctx context.Context, in BriefStepArgs) (map[strin
 			b.WriteString("- " + h + "\n")
 		}
 		b.WriteString("\n")
-	}
-	if res, aerr := s.Affirm.Russian(ctx); aerr == nil {
-		fmt.Fprintf(&b, "_Аффирмация дня: %s %s_\n", res.Affirmation, res.Emoji)
 	}
 
 	brief := b.String()

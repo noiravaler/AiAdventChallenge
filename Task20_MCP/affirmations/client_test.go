@@ -118,6 +118,101 @@ func TestFetchErrors(t *testing.T) {
 	}
 }
 
+// TestTranslate — произвольный текст и произвольное направление перевода.
+func TestTranslate(t *testing.T) {
+	tr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		// Пустые языки подставляются на клиенте: en→ru по умолчанию.
+		if r.Form.Get("sl") != "en" || r.Form.Get("tl") != "ru" {
+			t.Errorf("неверная пара языков: %q→%q", r.Form.Get("sl"), r.Form.Get("tl"))
+		}
+		if r.Form.Get("q") != "Everything will work out" {
+			t.Errorf("неверный текст: %q", r.Form.Get("q"))
+		}
+		_, _ = w.Write([]byte(`[[["Всё получится","Everything will work out",null,null,10]],null,"en"]`))
+	}))
+	defer tr.Close()
+
+	c := New("https://www.affirmations.dev", tr.URL, 5*time.Second)
+	out, err := c.Translate(context.Background(), "Everything will work out", "", "")
+	if err != nil {
+		t.Fatalf("Translate: %v", err)
+	}
+	if out != "Всё получится" {
+		t.Errorf("неожиданный перевод: %q", out)
+	}
+}
+
+// TestTranslateCustomDirection — нестандартная пара языков доходит до gtx.
+func TestTranslateCustomDirection(t *testing.T) {
+	tr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Form.Get("sl") != "ru" || r.Form.Get("tl") != "de" {
+			t.Errorf("неверная пара языков: %q→%q", r.Form.Get("sl"), r.Form.Get("tl"))
+		}
+		_, _ = w.Write([]byte(`[[["Alles gut","всё хорошо",null,null,10]],null,"ru"]`))
+	}))
+	defer tr.Close()
+
+	c := New("https://www.affirmations.dev", tr.URL, 5*time.Second)
+	out, err := c.Translate(context.Background(), "всё хорошо", "ru", "de")
+	if err != nil {
+		t.Fatalf("Translate: %v", err)
+	}
+	if out != "Alles gut" {
+		t.Errorf("неожиданный перевод: %q", out)
+	}
+}
+
+// TestStatus — диагностика обоих провайдеров: доступные и упавшие.
+func TestStatus(t *testing.T) {
+	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"affirmation":"Stay strong"}`))
+	}))
+	defer src.Close()
+	tr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[[["привет","hello",null,null,10]],null,"en"]`))
+	}))
+	defer tr.Close()
+
+	c := New(src.URL, tr.URL, 5*time.Second)
+	st := c.Status(context.Background())
+	aff := st["affirmations"].(map[string]any)
+	if aff["status"] != "ok" {
+		t.Errorf("аффирмации: ожидался ok, получено %v", aff["status"])
+	}
+	tst := st["translate"].(map[string]any)
+	if tst["status"] != "ok" {
+		t.Errorf("переводчик: ожидался ok, получено %v", tst["status"])
+	}
+}
+
+// TestStatusTranslateDown — упавший переводчик виден в статусе,
+// а аффирмации остаются ok.
+func TestStatusTranslateDown(t *testing.T) {
+	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"affirmation":"Stay strong"}`))
+	}))
+	defer src.Close()
+	tr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer tr.Close()
+
+	c := New(src.URL, tr.URL, 5*time.Second)
+	st := c.Status(context.Background())
+	aff := st["affirmations"].(map[string]any)
+	if aff["status"] != "ok" {
+		t.Errorf("аффирмации: ожидался ok, получено %v", aff["status"])
+	}
+	tst := st["translate"].(map[string]any)
+	if tst["status"] != "error" {
+		t.Errorf("переводчик: ожидался error, получено %v", tst["status"])
+	}
+}
+
 // TestParseGTX — разбор сегментов ответа gtx, включая склейку.
 func TestParseGTX(t *testing.T) {
 	out, err := parseGTX([]byte(`[[["У тебя ","всё получится","",null,10],["всё отлично","",null,10]],null,"en"]`))
